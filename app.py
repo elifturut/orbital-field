@@ -56,6 +56,7 @@ import basemaps as bm
 import calibration as cal
 import data_engine as de
 import data_sources as src
+import landing
 import portal as pt
 import reports as rep
 from data_engine import ClaimRules, format_tr
@@ -428,7 +429,7 @@ def render_html(markup: str) -> None:
 
 def inject_css() -> None:
     """Özel CSS temasını sayfaya enjekte eder."""
-    st.markdown(f"<style>{CUSTOM_CSS}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{CUSTOM_CSS}{landing.LANDING_CSS}</style>", unsafe_allow_html=True)
 
 
 def _supports_width_stretch() -> bool:
@@ -1129,15 +1130,16 @@ def render_overview_tab() -> None:
     ], core=1))
 
     render_html(build_section_title("VERİ HATTI", "gerçek veriye geçiş"))
-    show_table(build_pipeline_frame(), height=232)
-    cred = src.load_credentials()
-    cdse_state = "tanımlı" if cred.has_cdse else "tanımlı değil"
-    firms_state = "tanımlı" if cred.has_firms else "tanımlı değil"
-    render_html(
-        '<div class="note info">Canlı moda geçmek için ortam değişkenleri: <b>CDSE_CLIENT_ID</b>, '
-        "<b>CDSE_CLIENT_SECRET</b>, <b>FIRMS_MAP_KEY</b>. Şu an: "
-        f"CDSE <b>{cdse_state}</b> · FIRMS <b>{firms_state}</b>. "
-        "Değerler ekranda gösterilmez.</div>")
+    with st.expander("Veri kaynakları ve canlı moda geçiş"):
+        show_table(build_pipeline_frame(), height=232)
+        cred = src.load_credentials()
+        cdse_state = "tanımlı" if cred.has_cdse else "tanımlı değil"
+        firms_state = "tanımlı" if cred.has_firms else "tanımlı değil"
+        render_html(
+            '<div class="note info">Canlı moda geçmek için ortam değişkenleri: <b>CDSE_CLIENT_ID</b>, '
+            "<b>CDSE_CLIENT_SECRET</b>, <b>FIRMS_MAP_KEY</b>. Şu an: "
+            f"CDSE <b>{cdse_state}</b> · FIRMS <b>{firms_state}</b>. "
+            "Değerler ekranda gösterilmez.</div>")
 
     render_html(build_section_title("NELER GERÇEK, NELER DEĞİL"))
     render_brief([
@@ -1158,7 +1160,7 @@ def render_overview_tab() -> None:
 # SEKME 1 — SİGORTA (Risk ve Hasar)
 # =========================================================================== #
 INS_MODES: Tuple[str, ...] = ("Hasar şiddeti (dNBR)", "Tazminat kararı", "Poliçe risk skoru")
-#: Kural panelindeki dört eşik kaydırıcısının ``session_state`` anahtarları (ClaimRules alanı → anahtar).
+#: Sol menüdeki dört eşik kaydırıcısının ``session_state`` anahtarları (ClaimRules alanı → anahtar).
 INS_STATE_KEYS: Dict[str, str] = {
     "approve_dnbr": "ins_approve", "partial_dnbr": "ins_partial",
     "review_dnbr": "ins_review", "min_confidence": "ins_conf",
@@ -1186,18 +1188,22 @@ def effective_rules(approve: float, partial: float, review: float, confidence: f
     return rules, adjusted
 
 
-def current_rules() -> ClaimRules:
-    """Sigorta sekmesindeki kural panelinin güncel değerlerinden ``ClaimRules`` üretir.
+def current_rules_checked() -> Tuple[ClaimRules, bool]:
+    """Kenar çubuğundaki karar kuralı kaydırıcılarının güncel değerlerinden ``ClaimRules`` üretir.
 
     Returns:
-        Kurallar (panel henüz çizilmediyse ``ClaimRules`` varsayılanları).
+        ``(kurallar, eşikler otomatik düzeltildi mi)``; kaydırıcılar henüz çizilmediyse ``ClaimRules`` varsayılanları.
     """
     d, state = ClaimRules(), st.session_state
-    rules, _ = effective_rules(
+    return effective_rules(
         state.get("ins_approve", d.approve_dnbr), state.get("ins_partial", d.partial_dnbr),
         state.get("ins_review", d.review_dnbr), state.get("ins_conf", d.min_confidence),
         state.get("ins_ded", d.deductible_pct), state.get("ins_cover", d.coverage_pct))
-    return rules
+
+
+def current_rules() -> ClaimRules:
+    """Kenar çubuğundaki karar kurallarının güncel halini döndürür (``current_rules_checked`` yalnızca kurallar)."""
+    return current_rules_checked()[0]
 
 
 def _threshold_tuple(rules: ClaimRules) -> Tuple[float, float, float, float]:
@@ -1206,7 +1212,7 @@ def _threshold_tuple(rules: ClaimRules) -> Tuple[float, float, float, float]:
 
 
 def apply_calibrated_rules(values: Tuple[float, float, float, float], lines: Tuple[str, ...]) -> None:
-    """``on_click`` geri çağrısı: önerilen eşikleri Sigorta kural paneline yazar.
+    """``on_click`` geri çağrısı: önerilen eşikleri sol menüdeki kural kaydırıcılarına yazar.
 
     Geri çağrılar betik yeniden çalışmadan ÖNCE işlendiği için, başka sekmedeki
     kaydırıcıların ``session_state`` değerlerini değiştirmek güvenlidir.
@@ -1229,7 +1235,7 @@ def reset_rules() -> None:
 
 
 def calibration_lines_for(rules: ClaimRules) -> Tuple[str, ...]:
-    """Kural paneli hâlâ uygulanmış kalibrasyonla aynıysa kanıt paketi satırlarını döndürür.
+    """Sol menüdeki kurallar hâlâ uygulanmış kalibrasyonla aynıysa kanıt paketi satırlarını döndürür.
 
     Args:
         rules: Geçerli kurallar.
@@ -1459,29 +1465,20 @@ def build_severity_chart(claims: pd.DataFrame) -> go.Figure:
 
 
 def render_insurance_tab() -> None:
-    """SİGORTA sekmesini çizer: kural paneli, KPI'lar, GeoJSON hasar haritası, risk grafiği, karar tablosu."""
+    """SİGORTA sekmesini çizer: KPI'lar, GeoJSON hasar haritası; altında kararlar, grafikler ve kanıt paketi sekmeleri.
+
+    Karar kuralları kenar çubuğundaki kaydırıcılardan gelir (``render_rule_controls``).
+    """
     auth.require(session_principal(), auth.PERM_INSURANCE)
     cfg = get_settings()
     ds = load_insurance(cfg.seed)
     render_html(build_hero_html(
         "ÇEKİRDEK PAZAR · SİGORTA", "RİSK VE", "HASAR ANALİZİ",
-        "Parsel bazlı dNBR hasar katmanı, poliçe risk skorlaması ve otomatik tazminat onay/ret motoru.",
+        "Parsel bazlı dNBR hasar katmanı, poliçe risk skorlaması ve otomatik tazminat onay/ret motoru. "
+        "Karar kurallarını sol menüden değiştirin; her şey anında yeniden hesaplanır.",
         ["DEMO · SENTETİK VERİ", "SENTINEL-2 · NBR/dNBR", f"OLAY SONRASI: {ds.event_date:%d.%m.%Y}"]))
 
-    render_html(build_section_title("KARAR MOTORU KURALLARI", "eşikleri değiştirin — tablo anında yeniden hesaplanır"))
-    with panel():
-        c1, c2, c3, c4 = st.columns(4)
-        approve = c1.slider("Tam onay eşiği (dNBR ≥)", *cal.BOUNDS["approve_dnbr"], 0.44, 0.01, key="ins_approve")
-        partial = c2.slider("Kısmi onay eşiği (dNBR ≥)", *cal.BOUNDS["partial_dnbr"], 0.27, 0.01, key="ins_partial")
-        review = c3.slider("Ret eşiği (dNBR <)", *cal.BOUNDS["review_dnbr"], 0.10, 0.01, key="ins_review")
-        confidence = c4.slider("Min. gözlem güveni", *cal.BOUNDS["min_confidence"], 0.80, 0.01, key="ins_conf")
-        c5, c6, c7, c8 = st.columns(4)
-        deductible = c5.slider("Muafiyet (%)", 0.0, 10.0, 2.0, 0.5, key="ins_ded")
-        coverage = c6.slider("Teminat oranı (%)", 50, 100, 90, 5, key="ins_cover")
-        top_n = c7.slider("Grafikte gösterilecek poliçe", 10, 40, 20, 5, key="ins_topn")
-        mode = c8.radio("Harita renklendirmesi", list(INS_MODES), key="ins_mode")
-
-    rules, adjusted = effective_rules(approve, partial, review, confidence, deductible, coverage)
+    rules, adjusted = current_rules_checked()
     if adjusted:
         render_html('<div class="note info">Eşikler tutarlı olacak şekilde otomatik düzeltildi '
                     '(ret &lt; kısmi onay &lt; tam onay).</div>')
@@ -1501,6 +1498,7 @@ def render_insurance_tab() -> None:
             "onay · kısmi · ekspertiz · ret"),
     ], columns=5))
 
+    mode = st.radio("Harita renklendirmesi", list(INS_MODES), horizontal=True, key="ins_mode")
     show_map(build_insurance_map(ds, claims, mode, cfg.basemap), key="ins_map", height=660)
     if mode == INS_MODES[0]:
         render_html(build_legend_html("dNBR", list(zip(SEVERITY_COLORS, de.SEVERITY_LABELS))))
@@ -1509,13 +1507,36 @@ def render_insurance_tab() -> None:
     else:
         render_html(build_legend_html("RİSK", [(ramp_color(v, RISK_STOPS), t) for v, t in
                                                 ((10, "Düşük"), (45, "Orta"), (70, "Yüksek"), (95, "Çok yüksek"))]))
-    chart_a, chart_b = st.columns(2)
-    with chart_a:
-        show_figure(build_risk_chart(claims, int(top_n)), key="ins_risk_chart")
-    with chart_b:
-        show_figure(build_severity_chart(claims), key="ins_sev_chart")
 
-    render_html(build_section_title("OTOMATİK TAZMİNAT KARARLARI", "dinamik · filtrelenebilir · CSV'ye aktarılabilir"))
+    tab_table, tab_charts, tab_pack = st.tabs(list(INS_SUBTABS))
+    with tab_table:
+        view = render_decision_table(claims, s, rules)
+    with tab_charts:
+        top_n = st.slider("Grafikte gösterilecek poliçe", 10, 40, 20, 5, key="ins_topn")
+        chart_a, chart_b = st.columns(2)
+        with chart_a:
+            show_figure(build_risk_chart(claims, int(top_n)), key="ins_risk_chart")
+        with chart_b:
+            show_figure(build_severity_chart(claims), key="ins_sev_chart")
+    with tab_pack:
+        render_evidence_section(ds, claims, view, rules, cfg.seed)
+
+
+#: Sigorta sekmesindeki alt sekmeler.
+INS_SUBTABS: Tuple[str, ...] = ("Kararlar", "Grafikler", "Kanıt paketi")
+
+
+def render_decision_table(claims: pd.DataFrame, s: Dict[str, Any], rules: ClaimRules) -> pd.DataFrame:
+    """Sigorta sekmesinin "Kararlar" alt sekmesi: filtre, sıralama, tablo, CSV ve özet.
+
+    Args:
+        claims: Tüm karar tablosu.
+        s: ``summarize_claims`` çıktısı.
+        rules: Geçerli kurallar.
+
+    Returns:
+        Filtrelenmiş ve sıralanmış görünüm (kanıt paketinin kapsamı).
+    """
     f1, f2, f3 = st.columns([2, 2, 1])
     picked = f1.multiselect("Karar filtresi", list(DECISION_ICONS), default=list(DECISION_ICONS), key="ins_filter")
     query = f2.text_input("Poliçe no / sigortalı ara", key="ins_query")
@@ -1551,9 +1572,9 @@ def render_insurance_tab() -> None:
         f"{len(view)} / {len(claims)} poliçe listeleniyor · {int(s['approved'])} otomatik ONAY, "
         f"{int(s['partial'])} KISMİ ONAY (avans %{rules.advance_pct:.0f}), {int(s['review'])} EKSPERTİZ, {int(s['rejected'])} RET",
         f"toplam ödeme ₺{format_tr(s['paid_tl'])} · bekleyen ₺{format_tr(s['pending_tl'])} · "
-        f"muafiyet %{deductible:.1f} · teminat %{coverage:.0f}",
+        f"muafiyet %{rules.deductible_pct:.1f} · teminat %{rules.coverage_pct:.0f}",
     ])
-    render_evidence_section(ds, claims, view, rules, cfg.seed)
+    return view
 
 
 # =========================================================================== #
@@ -1755,7 +1776,7 @@ def render_calibration_tab() -> None:
         render_html(f'<div class="note info">{_h(warning)}</div>')
     frame = table.frame
 
-    render_html(build_section_title("AYARLAR", "mevcut kurallar: Sigorta sekmesindeki kural paneli"))
+    render_html(build_section_title("AYARLAR", "mevcut kurallar: sol menüdeki karar kuralları"))
     with panel():
         s1, s2, s3 = st.columns(3)
         limit_pct = s1.slider("Azami kritik hata (%)", 0.0, 10.0, 2.0, 0.5, key="cal_limit")
@@ -1768,45 +1789,57 @@ def render_calibration_tab() -> None:
     limit = float(limit_pct) / 100.0
 
     before_all = cal.backtest(frame, rules)
-    render_html(build_section_title("MEVCUT KURALLARIN SINAMASI", f"{format_tr(len(frame))} geçmiş karar · {label}"))
-    render_html(build_kpi_grid(metric_kpis(before_all, limit), columns=5))
-
     dis = cal.disagreements(frame, rules)
-    if len(frame) < cal.MIN_ROWS_CALIBRATE:
-        render_html(f'<div class="note">Kalibrasyon için en az {cal.MIN_ROWS_CALIBRATE} geçerli kayıt gerekir '
-                    f"(bulunan: {len(frame)}). Mevcut kuralların sınaması yukarıda gösterildi.</div>")
-        res = None
-    else:
-        res = run_calibration(frame, astuple(rules), limit, float(test_pct) / 100.0, cfg.seed)
+    enough = len(frame) >= cal.MIN_ROWS_CALIBRATE
+    res = run_calibration(frame, astuple(rules), limit, float(test_pct) / 100.0, cfg.seed) if enough else None
+    not_enough = (f'<div class="note">Kalibrasyon için en az {cal.MIN_ROWS_CALIBRATE} geçerli kayıt gerekir '
+                  f"(bulunan: {len(frame)}). Mevcut kuralların sınaması “Sınama” sekmesinde.</div>")
 
-    if res is not None:
-        render_calibration_result(res, rules, limit, label, synthetic)
-
-    render_html(build_section_title("PLATFORM İLE UZMANIN AYRIŞTIĞI KAYITLAR", "mevcut kurallar · tüm geçmiş"))
-    if dis.empty:
-        render_html('<div class="note ok">Mevcut kurallar tüm geçmiş kararları birebir yeniden üretiyor.</div>')
-    else:
-        shown = dis.head(200).copy()
-        shown["police_aktif"] = np.where(shown["police_aktif"], "Evet", "Hayır")
-        cc = st.column_config
-        show_table(shown, {
-            "tur": cc.TextColumn("Sapma türü"), "dnbr": cc.NumberColumn("dNBR", format="%.3f"),
-            "guven": cc.NumberColumn("Güven", format="%.2f"), "police_aktif": cc.TextColumn("Poliçe aktif"),
-            "gercek_karar": cc.TextColumn("Uzman kararı"), "platform_karar": cc.TextColumn("Platform kararı"),
-        }, height=300)
-        st.download_button("↓  TÜM SAPMALAR (CSV)", data=cal.history_csv(dis), file_name="sapmalar.csv",
-                           mime="text/csv", key="cal_dis_download")
-        st.caption(f"{format_tr(len(dis))} sapma; tabloda ilk {format_tr(len(shown))} kayıt gösteriliyor, "
-                   "kritik hatalar üstte.")
+    tab_test, tab_rec, tab_charts, tab_dis = st.tabs(list(CAL_SUBTABS))
+    with tab_test:
+        render_html(build_section_title("MEVCUT KURALLARIN SINAMASI", f"{format_tr(len(frame))} geçmiş karar · {label}"))
+        render_html(build_kpi_grid(metric_kpis(before_all, limit), columns=5))
+    with tab_rec:
+        if res is None:
+            render_html(not_enough)
+        else:
+            render_calibration_result(res, rules, limit, label, synthetic)
+    with tab_charts:
+        if res is None:
+            render_html(not_enough)
+        else:
+            render_calibration_charts(res, rules)
+    with tab_dis:
+        render_html(build_section_title("PLATFORM İLE UZMANIN AYRIŞTIĞI KAYITLAR", "mevcut kurallar · tüm geçmiş"))
+        if dis.empty:
+            render_html('<div class="note ok">Mevcut kurallar tüm geçmiş kararları birebir yeniden üretiyor.</div>')
+        else:
+            shown = dis.head(200).copy()
+            shown["police_aktif"] = np.where(shown["police_aktif"], "Evet", "Hayır")
+            cc = st.column_config
+            show_table(shown, {
+                "tur": cc.TextColumn("Sapma türü"), "dnbr": cc.NumberColumn("dNBR", format="%.3f"),
+                "guven": cc.NumberColumn("Güven", format="%.2f"), "police_aktif": cc.TextColumn("Poliçe aktif"),
+                "gercek_karar": cc.TextColumn("Uzman kararı"), "platform_karar": cc.TextColumn("Platform kararı"),
+            }, height=300)
+            st.download_button("↓  TÜM SAPMALAR (CSV)", data=cal.history_csv(dis), file_name="sapmalar.csv",
+                               mime="text/csv", key="cal_dis_download")
+            st.caption(f"{format_tr(len(dis))} sapma; tabloda ilk {format_tr(len(shown))} kayıt gösteriliyor, "
+                       "kritik hatalar üstte.")
 
     notes = list(res.notes) if res is not None else []
-    render_brief([
-        "Geriye dönük test ve üretim kararı aynı işlevi (decide_codes) kullanır; test edilen kural ile uygulanan kural ayrışamaz.",
-        "Eşikler yalnızca eğitim kayıtlarında aranır; sonuçlar hiç görülmemiş test kayıtlarında raporlanır. "
-        "Muafiyet, teminat ve avans poliçe şartıdır ve kalibre edilmez.",
-        "Kalibrasyon, geçmiş kararların kuralıyla (dNBR + güven) açıklanabildiği ölçüde anlamlıdır; "
-        "uzmanlar başka bilgilere de bakmış olabilir." + (" " + " ".join(notes) if notes else ""),
-    ])
+    with st.expander("Yöntem ve sınırlar"):
+        render_brief([
+            "Geriye dönük test ve üretim kararı aynı işlevi (decide_codes) kullanır; test edilen kural ile uygulanan kural ayrışamaz.",
+            "Eşikler yalnızca eğitim kayıtlarında aranır; sonuçlar hiç görülmemiş test kayıtlarında raporlanır. "
+            "Muafiyet, teminat ve avans poliçe şartıdır ve kalibre edilmez.",
+            "Kalibrasyon, geçmiş kararların kuralıyla (dNBR + güven) açıklanabildiği ölçüde anlamlıdır; "
+            "uzmanlar başka bilgilere de bakmış olabilir." + (" " + " ".join(notes) if notes else ""),
+        ])
+
+
+#: Kalibrasyon sekmesindeki alt sekmeler.
+CAL_SUBTABS: Tuple[str, ...] = ("Sınama", "Öneri", "Grafikler", "Ayrışmalar")
 
 
 def render_calibration_result(res: cal.CalibrationResult, rules: ClaimRules, limit: float, label: str,
@@ -1863,17 +1896,26 @@ def render_calibration_result(res: cal.CalibrationResult, rules: ClaimRules, lim
         f"kritik hata {pct_text(tb.critical_rate)} → {pct_text(ta.critical_rate)}.",
     )
     b1, b2, b3 = st.columns([3, 1, 3])
-    b1.button("✓  ÖNERİLEN KURALLARI SİGORTA SEKMESİNE UYGULA", on_click=apply_calibrated_rules,
+    b1.button("✓  ÖNERİLEN KURALLARI UYGULA", on_click=apply_calibrated_rules,
               args=(_threshold_tuple(tuned), lines), key="cal_apply", disabled=not res.recommended)
     b2.button("↺  Sıfırla", on_click=reset_rules, key="cal_reset")
     if calibration_lines_for(rules):
-        render_html('<div class="note ok">Önerilen eşikler Sigorta sekmesindeki kural paneline uygulandı; '
+        render_html('<div class="note ok">Önerilen eşikler sol menüdeki karar kurallarına uygulandı; '
                     "kanıt paketlerine kalibrasyon bilgisi eklenir. Mevcut kurallar artık önerilenle aynı olduğundan "
                     "yukarıdaki iki sütun birbirine eşittir.</div>")
     elif not res.recommended:
         render_html('<div class="note">Öneri test bölümünde güvenilir bir iyileşme göstermediği için uygulanamaz '
                     "(uyum artmadı ya da kritik hata sınırı aşıldı).</div>")
 
+
+def render_calibration_charts(res: cal.CalibrationResult, rules: ClaimRules) -> None:
+    """Kalibrasyon grafikleri: karışıklık matrisleri ve eşik duyarlılığı.
+
+    Args:
+        res: Kalibrasyon sonucu.
+        rules: Mevcut kurallar.
+    """
+    tb, ta, tuned = res.test_before, res.test_after, res.tuned_rules
     render_html(build_section_title("KARIŞIKLIK MATRİSİ", "satır: uzman · sütun: platform · kırmızı çerçeve: kritik hata"))
     g1, g2 = st.columns(2)
     with g1:
@@ -2609,6 +2651,11 @@ def render_rescue_tab() -> None:
 ACCOUNTS_ENV = "ORBITAL_ACCOUNTS_JSON"
 SESSION_USER, SESSION_SEEN = "auth_user", "auth_seen"
 SESSION_LOGIN, SESSION_NOTICE = "auth_login_state", "auth_notice"
+#: Oturumsuz ziyaretçinin gördüğü ekran: karşılama sayfası ya da giriş formu.
+SESSION_VIEW, VIEW_LANDING, VIEW_LOGIN = "ui_view", "landing", "login"
+#: Oturum kapalıyken yan menü gösterilmez (boş bir şerit kalmasın).
+HIDE_SIDEBAR_CSS = ('<style>section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], '
+                    '[data-testid="collapsedControl"]{display:none !important}</style>')
 #: Müşteri oturumu her zaman bu tohum ve varsayılan kurallarla çalışır (müşteri hiçbir ayarı değiştiremez).
 DEFAULT_SEED = 2026
 LOGIN_MESSAGES: Dict[str, str] = {
@@ -2662,6 +2709,7 @@ def logout(notice: str = "Çıkış yapıldı.") -> None:
         del st.session_state[key]
     if isinstance(keep, auth.LoginState):
         st.session_state[SESSION_LOGIN] = keep
+    st.session_state[SESSION_VIEW] = VIEW_LOGIN       # ileti (ör. "Çıkış yapıldı") giriş ekranında görünsün
     if notice:
         st.session_state[SESSION_NOTICE] = notice
 
@@ -2684,7 +2732,10 @@ def gate(now: Optional[float] = None) -> Optional[auth.Principal]:
         logout("Uzun süre işlem yapılmadığı için oturumunuz kapatıldı.")
         principal = None
     if principal is None:
-        render_login(now)
+        if st.session_state.get(SESSION_VIEW) == VIEW_LOGIN:
+            render_login(now)
+        else:
+            render_landing()
         return None
     st.session_state[SESSION_SEEN] = now
     return principal
@@ -2697,6 +2748,61 @@ def build_demo_accounts_html() -> str:
         for a in auth.demo_accounts())
     return ('<div class="demo-accounts"><b>DEMO HESAPLARI</b> · herkese açık, yalnızca sentetik veri için<br>'
             f"{rows}</div>")
+
+
+def show_login() -> None:
+    """``on_click`` geri çağrısı: giriş formunu açar."""
+    st.session_state[SESSION_VIEW] = VIEW_LOGIN
+
+
+def show_landing() -> None:
+    """``on_click`` geri çağrısı: karşılama sayfasına döner."""
+    st.session_state[SESSION_VIEW] = VIEW_LANDING
+
+
+def load_contact_email() -> str:
+    """İletişim adresini ``ORBITAL_CONTACT_EMAIL`` ortam değişkeninden ya da ``st.secrets``'tan okur ve doğrular.
+
+    Returns:
+        Geçerli adres; tanımsız ya da geçersizse boş metin (iletişim düğmesi çizilmez).
+    """
+    value: Any = os.environ.get(landing.CONTACT_ENV, "")
+    if not str(value).strip():
+        try:
+            value = st.secrets.get(landing.CONTACT_ENV, "")
+        except Exception:      # secrets.toml yok ya da okunamadı
+            value = ""
+    return landing.valid_email(value)
+
+
+def render_landing() -> None:
+    """Giriş öncesi herkese açık karşılama sayfası: tanıtım, hizmetler, nasıl çalışır, durum ve iletişim.
+
+    Hesap, müşteri ya da veri içermez; yalnızca sabit tanıtım metni ve (tanımlıysa) iletişim adresi gösterilir.
+    """
+    _, is_demo, _ = load_accounts()
+    email = load_contact_email()
+    render_html(HIDE_SIDEBAR_CSS)
+    brand, action = st.columns([5, 1.3])
+    with brand:
+        render_html(build_brand_html())
+    with action:
+        st.button("GİRİŞ YAP", on_click=show_login, key="lp_login_top")
+    render_html(landing.build_landing_hero())
+
+    render_html(build_section_title("BİZ NEYİZ", "ORBITAL FIELD"))
+    render_html(landing.build_about_html())
+    render_html(build_section_title("NELER YAPIYORUZ", "dört alan · aynı uydu çekirdeği"))
+    render_html(landing.build_cards(landing.SECTORS, columns=4, core=2))
+    render_html(build_section_title("NASIL ÇALIŞIR", "üç adım"))
+    render_html(landing.build_cards(landing.HOW_STEPS, columns=3))
+    render_html(build_section_title("NELER SUNUYORUZ"))
+    render_html(landing.build_cards(landing.FEATURES, columns=3))
+    render_html(landing.build_status_html(is_demo))
+    render_html(build_section_title("HİZMET ALIN", "bize ulaşın"))
+    render_html(landing.build_contact_html(email, is_demo))
+    st.button("GİRİŞ YAP", on_click=show_login, key="lp_login_bottom")
+    render_html(build_footer_html())
 
 
 def render_login(now: float) -> None:
@@ -2712,9 +2818,11 @@ def render_login(now: float) -> None:
     state = st.session_state.get(SESSION_LOGIN)
     if not isinstance(state, auth.LoginState):
         state = st.session_state[SESSION_LOGIN] = auth.LoginState()
+    render_html(HIDE_SIDEBAR_CSS)
     _, mid, _ = st.columns([1, 1.25, 1])
     with mid:
         render_html(build_brand_html())
+        st.button("← Ana sayfa", on_click=show_landing, key="login_back")
         render_html('<div class="login-head"><div class="hero-eyebrow">GİRİŞ</div>'
                     '<div class="hero-title">HESABINIZA <span>GİRİŞ YAPIN</span></div>'
                     '<div class="hero-sub">Sigortacılar tüm modülleri, müşteriler yalnızca kendi poliçe ve hasar '
@@ -2834,8 +2942,167 @@ def build_customer_map(ds: de.InsuranceDataset, view: pt.CustomerView, basemap: 
     return fmap
 
 
+#: Sezon seyri etiketi → renk (müşteri ekranı; ham ölçüm değil).
+TRACK_COLORS: Dict[str, str] = {
+    "Beklenen seyirde": COLOR_OK, "Hafif geride": COLOR_AMBER, "Geride": "#ec9a4d", "Belirgin geride": COLOR_DANGER,
+    de.NOT_TRACKED: COLOR_MUTED,
+}
+
+
+def _signed_pct(value: float) -> str:
+    """İşaretli yüzde metni: ``+%5``, ``−%7``, ``%0``."""
+    sign = "+" if value >= 0.5 else "−" if value <= -0.5 else ""
+    return f"{sign}%{format_tr(abs(value), 0)}"
+
+
+def build_growth_chart(pview: pt.ProductivityView, police_no: str) -> go.Figure:
+    """Seçili parselin bitki gelişim indeksini (beklenen = 100) ve olay sonrası gözlemi çizer.
+
+    Yalnızca müşterinin kendi parselinin göreli indeksi çizilir; ham uydu ölçümü ve başka parsel yoktur.
+
+    Args:
+        pview: ``portal.build_productivity`` çıktısı.
+        police_no: Takip edilen parselin poliçe numarası.
+
+    Returns:
+        ``go.Figure``.
+    """
+    values = pview.index[police_no]
+    dates, last = pview.dates, pview.event_index
+    pre_x, pre_y = list(dates[:last]), list(values[:last])
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=pre_x, y=pre_y, name="Bitki gelişimi", mode="lines+markers",
+        line=dict(color=COLOR_ACCENT, width=2.6, shape="spline", smoothing=0.5), marker=dict(size=5),
+        hovertemplate="%{x|%d.%m.%Y}<br>Beklenene göre: %{y:.0f}%<extra></extra>"))
+    if pre_x:
+        fig.add_trace(go.Scatter(
+            x=[pre_x[-1], dates[last]], y=[pre_y[-1], float(values[last])], name="Olay etkisi", mode="lines",
+            line=dict(color=COLOR_DANGER, width=2.2, dash="dash"), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(
+        x=[dates[last]], y=[float(values[last])], name="Olay sonrası gözlem", mode="markers",
+        marker=dict(color=COLOR_DANGER, size=11, symbol="diamond", line=dict(color="#ffffff", width=1.2)),
+        hovertemplate="%{x|%d.%m.%Y}<br>Beklenene göre: %{y:.0f}%<extra></extra>"))
+    fig.add_shape(type="line", xref="paper", x0=0, x1=1, yref="y", y0=100, y1=100,
+                  line=dict(color=COLOR_MUTED, width=1.2, dash="dot"))
+    fig.add_annotation(xref="paper", x=0.0, yref="y", y=100, yanchor="bottom", xanchor="left", showarrow=False,
+                       text="beklenen = 100", font=dict(size=10, color=COLOR_MUTED))
+    fig.add_shape(type="line", xref="x", yref="paper", x0=dates[last].isoformat(), x1=dates[last].isoformat(),
+                  y0=0, y1=1, line=dict(color=COLOR_DANGER, width=1.2, dash="dot"))
+    fig.add_annotation(x=dates[last].isoformat(), xref="x", y=1, yref="paper", yanchor="top", xanchor="right",
+                       showarrow=False, text="OLAY ", font=dict(size=10, color=COLOR_DANGER))
+    style_figure(fig, 380, f"BİTKİ GELİŞİMİ · {police_no} · BEKLENEN = 100")
+    top = max(130.0, float(np.nanmax(values)) * 1.1)
+    fig.update_yaxes(title_text="Beklenene göre (%)", range=[0, top])
+    fig.update_xaxes(tickformat="%b", dtick="M1")
+    fig.update_layout(hovermode="x unified")
+    return fig
+
+
+def build_parcel_yield_chart(pview: pt.ProductivityView) -> go.Figure:
+    """Takip edilen parsellerin tahmini verimini beklenen verime oranla (beklenen = %100) çubuk olarak çizer.
+
+    Args:
+        pview: ``portal.build_productivity`` çıktısı (en az bir takip edilen parsel olmalı).
+
+    Returns:
+        ``go.Figure``.
+    """
+    data = pview.table[pview.table["seyir"] != de.NOT_TRACKED].copy()
+    data["endeks"] = 100.0 * data["tahmini_t_ha"] / data["beklenen_t_ha"]
+    custom = np.stack([data["varlik_turu"], data["tahmini_t_ha"], data["beklenen_t_ha"], data["olay_kaybi_pct"],
+                       data["seyir"]], axis=-1)
+    fig = go.Figure(go.Bar(
+        x=data["police_no"], y=data["endeks"], customdata=custom,
+        marker=dict(color=[TRACK_COLORS[de.track_label(float(v))] for v in data["endeks"]],
+                    line=dict(color="rgba(11,12,16,0.9)", width=1)),
+        text=[f"{v:.0f}" for v in data["endeks"]], textposition="outside", cliponaxis=False,
+        hovertemplate=("<b>%{x}</b> · %{customdata[0]}<br>Tahmini verim endeksi: %{y:.0f}%<br>"
+                       "Tahmini: %{customdata[1]:.1f} ton/ha · beklenen: %{customdata[2]:.1f} ton/ha<br>"
+                       "Olay kaybı: %{customdata[3]:.0f}% · seyir: %{customdata[4]}<extra></extra>")))
+    fig.add_shape(type="line", xref="paper", x0=0, x1=1, yref="y", y0=100, y1=100,
+                  line=dict(color=COLOR_ACCENT, width=1.2, dash="dot"))
+    style_figure(fig, 380, "TAHMİNİ VERİM ENDEKSİ · BEKLENEN = %100", legend_top=False)
+    fig.update_yaxes(title_text="Beklenen verime göre (%)", range=[0, max(120.0, float(data["endeks"].max()) * 1.2)])
+    fig.update_xaxes(tickangle=-30, type="category")
+    fig.update_layout(showlegend=False, bargap=0.35)
+    return fig
+
+
+def render_productivity_section(pview: pt.ProductivityView, police_no: str, prefix: str) -> None:
+    """VERİMLİLİK TAKİBİ bölümü: özet kartlar, seçili parselin gelişim eğrisi, parsel karşılaştırması ve tablo.
+
+    Yalnızca ``portal.ProductivityView`` (müşterinin kendi satırları) kullanılır.
+
+    Args:
+        pview: Müşterinin verimlilik görünümü.
+        police_no: Yukarıdaki seçicide seçili poliçe (parsel).
+        prefix: Widget anahtarı öneki (``cp`` müşteri, ``pv`` önizleme).
+    """
+    render_html(build_section_title("VERİMLİLİK TAKİBİ", f"seçili poliçe · {police_no} · beklenen düzey = 100"))
+    if pview.tracked == 0:
+        render_html('<div class="note info">Poliçelerinizdeki varlık türleri için bitki verimi takibi yapılmıyor.</div>')
+        return
+    assert pview.mean_score is not None and pview.mean_loss is not None and pview.forecast_index is not None
+
+    table = pview.table
+    row = table[table["police_no"] == police_no].iloc[0]
+    tracked_here = police_no in pview.index
+    if tracked_here:
+        render_html(build_kpi_grid([
+            Kpi("Tahmini verim", f"{format_tr(float(row['tahmini_t_ha']), 1)} ton/ha",
+                f"beklenen {format_tr(float(row['beklenen_t_ha']), 1)} ton/ha"),
+            Kpi("Tahmini toplam üretim", f"{format_tr(float(row['tahmini_toplam_t']), 1)} ton",
+                f"beklenen {format_tr(float(row['beklenen_toplam_t']), 1)} ton"),
+            Kpi("Beklenene göre", _signed_pct(float(row["fark_pct"])),
+                f"sezon seyri %{format_tr(float(row['verim_skoru']), 0)} · olay kaybı %{format_tr(float(row['olay_kaybi_pct']), 0)}",
+                TRACK_COLORS[de.track_label(100.0 + float(row["fark_pct"]))]),
+        ], columns=3))
+    left, right = st.columns([3, 2])
+    with left:
+        if tracked_here:
+            show_figure(build_growth_chart(pview, police_no), key=f"{prefix}_growth")
+        else:
+            render_html(f'<div class="note info">{_h(pt.productivity_text(row))}</div>')
+    with right:
+        show_figure(build_parcel_yield_chart(pview), key=f"{prefix}_yield")
+    if tracked_here:
+        render_html(f'<div class="note info"><b>{_h(police_no)}</b> · {_h(row["varlik_turu"])} — '
+                    f'{_h(pt.productivity_text(row))}</div>')
+    cc = st.column_config
+    with st.expander("Parsellerimin verimlilik tablosu"):
+        show_table(table[list(pt.PRODUCTIVITY_COLUMNS)], {
+            "police_no": cc.TextColumn("Poliçe No"), "parsel_id": cc.TextColumn("Parsel"),
+            "varlik_turu": cc.TextColumn("Varlık"), "alan_ha": cc.NumberColumn("Alan (ha)", format="%.1f"),
+            "verim_skoru": cc.NumberColumn("Sezon seyri %", format="%.0f"),
+            "olay_kaybi_pct": cc.NumberColumn("Olay kaybı %", format="%.0f"),
+            "beklenen_t_ha": cc.NumberColumn("Beklenen (t/ha)", format="%.1f"),
+            "tahmini_t_ha": cc.NumberColumn("Tahmini (t/ha)", format="%.1f"),
+            "fark_pct": cc.NumberColumn("Fark %", format="%.0f"),
+            "beklenen_toplam_t": cc.NumberColumn("Beklenen (t)", format="%.1f"),
+            "tahmini_toplam_t": cc.NumberColumn("Tahmini (t)", format="%.1f"),
+            "seyir": cc.TextColumn("Seyir"),
+        }, height=min(360, 76 + 35 * len(table)))
+    seyir = de.track_label(pview.mean_score)
+    render_html(f'<div class="note">Tüm parselleriniz: {pview.tracked} / {len(pview.table)} parsel takipte · '
+                f"ortalama sezon seyri %{format_tr(pview.mean_score, 0)} ({_h(seyir.lower())}) · "
+                f"olay etkisi −%{format_tr(pview.mean_loss, 0)} · "
+                f"tahmini verim endeksi %{format_tr(pview.forecast_index, 0)} (alan ağırlıklı). "
+                "Veriler sentetik demodur; beklenen verimler <b>örnek referans değerlerdir</b> (gerçek kayıtlarla "
+                "kalibre edilmedi). Tahmin, olay tarihine kadarki bitki gelişimi ile hasar oranından basit bir modelle "
+                "hesaplanır ve gerçek hasadı garanti etmez.</div>")
+
+
+#: Müşteri ekranındaki sekmeler (sırayla): özet+harita, seçili poliçenin hasarı, verimlilik, belgeler.
+PORTAL_TABS: Tuple[str, ...] = ("Özet", "Hasar durumum", "Verimlilik", "Belgeler")
+#: Karar kodu → özet kartında görünen kısa ad.
+PORTAL_STATUS_TEXT: Tuple[Tuple[str, str], ...] = (
+    ("ONAY", "onay"), ("KISMİ ONAY", "kısmi onay"), ("EKSPERTİZ", "ekspertiz"), ("RET", "ret"),
+)
+
+
 def render_portal_view(ds: de.InsuranceDataset, claims: pd.DataFrame, rules: ClaimRules, name: str,
-                       basemap: bm.BasemapChoice, prefix: str) -> pt.CustomerView:
+                       basemap: bm.BasemapChoice, prefix: str, seed: int) -> pt.CustomerView:
     """Bir müşterinin göreceği ekranı çizer (müşteri oturumu ve sigortacı önizlemesi aynı kodu kullanır).
 
     Yalnızca ``portal.build_view`` çıktısı kullanılır: başka müşterinin satırı, risk skoru ve ham ölçüm bu
@@ -2848,66 +3115,78 @@ def render_portal_view(ds: de.InsuranceDataset, claims: pd.DataFrame, rules: Cla
         name: Müşteri adı (``sigortali``).
         basemap: Seçili harita altlığı.
         prefix: Widget anahtarı öneki (``cp`` müşteri, ``pv`` önizleme).
+        seed: Veri tohumu (verimlilik takibi için).
 
     Returns:
         Çizilen ``CustomerView``.
     """
     view = pt.build_view(claims, name, rules)
     cnt = view.counts
-    render_html(build_kpi_grid([
-        Kpi("Poliçelerim", format_tr(len(view.policies)), f"Müşteri no <b>{_h(view.number)}</b>"),
-        Kpi("Toplam sigorta bedeli", f"₺{format_tr(view.total_insured, 0)}", "tüm poliçeleriniz"),
-        Kpi("Ödenecek tutar", f"₺{format_tr(view.total_paid, 0)}", "onaylanan / avans", COLOR_OK),
-        Kpi("Bekleyen tutar", f"₺{format_tr(view.total_pending, 0)}", "ekspertiz sonrası belirlenir", COLOR_AMBER),
-        Kpi("Durum özeti", f"{cnt['ONAY']} · {cnt['KISMİ ONAY']} · {cnt['EKSPERTİZ']} · {cnt['RET']}",
-            "onay · kısmi · ekspertiz · ret"),
-    ], columns=5))
-
-    render_html(build_section_title("POLİÇELERİM", "yalnızca size ait poliçeler"))
-    cc = st.column_config
-    show_table(view.policies[list(PORTAL_TABLE_COLUMNS)], {
-        "police_no": cc.TextColumn("Poliçe No"), "varlik_turu": cc.TextColumn("Varlık"),
-        "alan_ha": cc.NumberColumn("Alan (ha)", format="%.1f"),
-        "sigorta_bedeli_tl": cc.NumberColumn("Sigorta bedeli (₺)", format="%.0f"),
-        "siddet": cc.TextColumn("Hasar sınıfı"),
-        "hasar_yuzdesi": cc.ProgressColumn("Hasar oranı %", min_value=0, max_value=100, format="%.0f"),
-        "durum": cc.TextColumn("Durum"), "odenecek_tl": cc.NumberColumn("Ödenecek (₺)", format="%.0f"),
-        "bekleyen_tl": cc.NumberColumn("Bekleyen (₺)", format="%.0f"),
-    }, height=min(360, 76 + 35 * len(view.policies)))
-
     options = list(view.policies["police_no"])
     pick_key = f"{prefix}_pick"
     if st.session_state.get(pick_key) not in options:
         st.session_state[pick_key] = options[0]
-    render_html(build_section_title("HASAR TAKİBİ", "bir poliçe seçin"))
-    pick = st.selectbox("Poliçe", options, key=pick_key)
+    pick = st.selectbox("Seçili poliçe", options, key=pick_key)
     idx = options.index(pick)
     row, pos = view.policies.iloc[idx], view.positions[idx]
     decision = str(row["karar"])
-    steps = pt.steps_for(decision, ds.event_date, float(row["odenecek_tl"]), float(row["bekleyen_tl"]),
-                         rules.advance_pct)
-    left, right = st.columns([3, 2])
-    with left:
-        render_html(build_verdict_html(row, DECISION_COLORS[decision]))
-        render_html(build_tracker_html(steps))
+
+    tab_summary, tab_claim, tab_prod, tab_docs = st.tabs(list(PORTAL_TABS))
+
+    with tab_summary:
+        status = " · ".join(f"{cnt[key]} {text}" for key, text in PORTAL_STATUS_TEXT if cnt[key])
         render_html(build_kpi_grid([
-            Kpi("Sigorta bedeli", f"₺{format_tr(float(row['sigorta_bedeli_tl']), 0)}"),
+            Kpi("Poliçelerim", format_tr(len(view.policies)), status or "durum bilgisi yok"),
+            Kpi("Toplam sigorta bedeli", f"₺{format_tr(view.total_insured, 0)}", "tüm poliçeleriniz"),
+            Kpi("Ödenecek tutar", f"₺{format_tr(view.total_paid, 0)}", "onaylanan / avans", COLOR_OK),
+            Kpi("Bekleyen tutar", f"₺{format_tr(view.total_pending, 0)}", "ekspertiz sonrası belirlenir", COLOR_AMBER),
+        ], columns=4))
+        show_map(build_customer_map(ds, view, basemap), key=f"{prefix}_map", height=430)
+        render_html(build_legend_html("HASAR SINIFI", list(zip(SEVERITY_COLORS, de.SEVERITY_LABELS))))
+        render_html(build_section_title("POLİÇELERİM", f"müşteri no {view.number} · yalnızca size ait poliçeler"))
+        cc = st.column_config
+        show_table(view.policies[list(PORTAL_TABLE_COLUMNS)], {
+            "police_no": cc.TextColumn("Poliçe No"), "varlik_turu": cc.TextColumn("Varlık"),
+            "alan_ha": cc.NumberColumn("Alan (ha)", format="%.1f"),
+            "sigorta_bedeli_tl": cc.NumberColumn("Sigorta bedeli (₺)", format="%.0f"),
+            "siddet": cc.TextColumn("Hasar sınıfı"),
+            "hasar_yuzdesi": cc.ProgressColumn("Hasar oranı %", min_value=0, max_value=100, format="%.0f"),
+            "durum": cc.TextColumn("Durum"), "odenecek_tl": cc.NumberColumn("Ödenecek (₺)", format="%.0f"),
+            "bekleyen_tl": cc.NumberColumn("Bekleyen (₺)", format="%.0f"),
+        }, height=min(360, 76 + 35 * len(view.policies)))
+
+    with tab_claim:
+        steps = pt.steps_for(decision, ds.event_date, float(row["odenecek_tl"]), float(row["bekleyen_tl"]),
+                             rules.advance_pct)
+        render_html(build_section_title("HASAR DURUMU", f"seçili poliçe · {pick}"))
+        render_html(build_kpi_grid([
             Kpi("Hasar oranı", f"%{format_tr(float(row['hasar_yuzdesi']), 0)}", _h(str(row["siddet"]))),
             Kpi("Ödenecek", f"₺{format_tr(float(row['odenecek_tl']), 0)}", color=COLOR_OK),
             Kpi("Bekleyen", f"₺{format_tr(float(row['bekleyen_tl']), 0)}", color=COLOR_AMBER),
-        ], columns=4))
-    with right:
-        show_map(build_customer_map(ds, view, basemap), key=f"{prefix}_map", height=430)
-        render_html(build_legend_html("HASAR SINIFI", list(zip(SEVERITY_COLORS, de.SEVERITY_LABELS))))
+        ], columns=3))
+        left, right = st.columns([3, 2])
+        with left:
+            render_html(build_verdict_html(row, DECISION_COLORS[decision]))
+        with right:
+            render_html(build_tracker_html(steps))
 
-    render_html(build_section_title("KARAR BİLDİRİMİ", "seçili poliçe için indirilebilir belge"))
-    notice = pt.build_notice_html(claims.iloc[pos], name, rules, ds.event_label, ds.event_date,
-                                  dt.datetime.now(de.TR_TZ), ds.geometry, pos, SEVERITY_COLORS)
-    d1, d2 = st.columns([1, 2])
-    d1.download_button("↓  KARAR BİLDİRİMİ (HTML)", data=notice.encode("utf-8"),
-                       file_name=pt.notice_filename(str(pick), decision), mime="text/html", key=f"{prefix}_notice")
-    if d2.checkbox("Bildirimi burada önizle", value=False, key=f"{prefix}_notice_preview"):
-        show_html_frame(notice, height=1100)
+    with tab_prod:
+        prod = de.simulate_productivity(ds.parcels, ds.event_date, claims["hasar_yuzdesi"].to_numpy(), seed)
+        pview = pt.build_productivity(prod, view)   # tüm parsellerin verisi burada süzülür; sonrası yalnızca kendi satırları
+        del prod
+        render_productivity_section(pview, str(pick), prefix)
+
+    with tab_docs:
+        render_html(build_section_title("KARAR BİLDİRİMİ", f"seçili poliçe · {pick}"))
+        notice = pt.build_notice_html(claims.iloc[pos], name, rules, ds.event_label, ds.event_date,
+                                      dt.datetime.now(de.TR_TZ), ds.geometry, pos, SEVERITY_COLORS)
+        d1, d2 = st.columns([1, 2])
+        d1.download_button("↓  KARAR BİLDİRİMİ (HTML)", data=notice.encode("utf-8"),
+                           file_name=pt.notice_filename(str(pick), decision), mime="text/html", key=f"{prefix}_notice")
+        if d2.checkbox("Bildirimi burada önizle", value=False, key=f"{prefix}_notice_preview"):
+            show_html_frame(notice, height=1100)
+        render_html('<div class="note info">Bu ekrandaki bilgiler sentetik demo verisinden üretilmiştir; gerçek bir hasar '
+                    "kaydı değildir. İtiraz ve belge yükleme bu prototipte yoktur.</div>")
     return view
 
 
@@ -2925,17 +3204,15 @@ def render_customer_page() -> None:
     name = pt.resolve_customer(claims, principal)
     if name is None:
         render_html(build_hero_html("MÜŞTERİ PORTALI", "HASAR", "TAKİBİM",
-                                    "Poliçelerinizin uydu analizine dayalı hasar durumu ve ödeme adımları.",
+                                    "Poliçelerinizin hasar durumu, ödeme adımları ve parsellerinizin verimlilik takibi.",
                                     ["DEMO · SENTETİK VERİ"]))
         render_html('<div class="note">Hesabınıza bağlı poliçe bulunamadı. Lütfen sigortacınızla iletişime geçin.</div>')
         return
     render_html(build_hero_html(
         "MÜŞTERİ PORTALI", "HASAR", "TAKİBİM",
-        "Poliçelerinizin uydu analizine dayalı hasar durumu ve ödeme adımları.",
+        "Poliçelerinizin hasar durumu, ödeme adımları ve parsellerinizin verimlilik takibi.",
         ["DEMO · SENTETİK VERİ", f"MÜŞTERİ NO: {pt.customer_no(name)}", f"OLAY SONRASI: {ds.event_date:%d.%m.%Y}"]))
-    render_html('<div class="note info">Bu ekrandaki bilgiler sentetik demo verisinden üretilmiştir; gerçek bir hasar '
-                "kaydı değildir. İtiraz ve belge yükleme bu prototipte yoktur.</div>")
-    render_portal_view(ds, claims, rules, name, get_settings().basemap, "cp")
+    render_portal_view(ds, claims, rules, name, get_settings().basemap, "cp", DEFAULT_SEED)
 
 
 def build_visibility_frame() -> pd.DataFrame:
@@ -2966,14 +3243,14 @@ def render_portal_preview_tab() -> None:
         st.session_state["pv_customer"] = names[0]
     name = st.selectbox("Müşteri", names, key="pv_customer", format_func=lambda n: info.get(n, n))
     st.caption("Demo müşteri hesapları (musteri1–3), varsayılan tohum ve kurallarla sıralamadaki ilk üç müşteriye bağlıdır. "
-               "Bu önizleme geçerli tohumunuzu ve Sigorta sekmesindeki eşiklerinizi kullanır; müşteri oturumu ise "
+               "Bu önizleme geçerli tohumunuzu ve sol menüdeki karar kurallarınızı kullanır; müşteri oturumu ise "
                "varsayılan kurallarla çalışır.")
     with st.expander("Kim neyi görür?"):
         show_table(build_visibility_frame(), height=min(460, 76 + 35 * len(pt.VISIBILITY)))
 
     render_html(build_section_title("MÜŞTERİNİN GÖRDÜĞÜ EKRAN", "önizleme"))
     with panel():
-        view = render_portal_view(ds, claims, rules, name, cfg.basemap, "pv")
+        view = render_portal_view(ds, claims, rules, name, cfg.basemap, "pv", cfg.seed)
 
     render_html(build_section_title("YALNIZCA SİGORTACI · İÇ DEĞERLENDİRME", "müşteri bunları görmez"))
     internal = claims.iloc[list(view.positions)][list(INTERNAL_TABLE_COLUMNS)].reset_index(drop=True)
@@ -2989,7 +3266,7 @@ def render_portal_preview_tab() -> None:
     render_brief([
         f"{name} adına {len(view.policies)} poliçe: müşteri yalnızca kararı, tutarı ve sade dilli gerekçeyi görür; "
         "risk skoru, ham ölçümler, güven ve eşikler yalnızca sizdedir.",
-        "Kararın nasıl çıktığını belgelemek için SİGORTA sekmesindeki Karar kanıt paketini kullanın "
+        "Kararın nasıl çıktığını belgelemek için SİGORTA sekmesindeki Kanıt paketi alt sekmesini kullanın "
         "(arama kutusuna sigortalı adını yazın).",
     ])
 
@@ -2997,6 +3274,17 @@ def render_portal_preview_tab() -> None:
 # =========================================================================== #
 # Yan menü ve ana akış
 # =========================================================================== #
+def render_rule_controls() -> None:
+    """Sigortacı için karar kuralı kaydırıcıları (sol menü). Sigorta, Müşteri portalı ve Kalibrasyon aynı kuralları kullanır."""
+    render_html('<div class="side-label"><b>01</b> KARAR KURALLARI</div>')
+    st.slider("Tam onay eşiği (dNBR ≥)", *cal.BOUNDS["approve_dnbr"], 0.44, 0.01, key="ins_approve")
+    st.slider("Kısmi onay eşiği (dNBR ≥)", *cal.BOUNDS["partial_dnbr"], 0.27, 0.01, key="ins_partial")
+    st.slider("Ret eşiği (dNBR <)", *cal.BOUNDS["review_dnbr"], 0.10, 0.01, key="ins_review")
+    st.slider("Min. gözlem güveni", *cal.BOUNDS["min_confidence"], 0.80, 0.01, key="ins_conf")
+    st.slider("Muafiyet (%)", 0.0, 10.0, 2.0, 0.5, key="ins_ded")
+    st.slider("Teminat oranı (%)", 50, 100, 90, 5, key="ins_cover")
+
+
 def render_basemap_controls() -> None:
     """Harita altlığı seçimi, (gerekirse) görüntü günü ve açıklamalar; her iki rolde ortaktır."""
     chosen = bm.by_label(st.radio("Harita altlığı", list(BASEMAP_OPTIONS), key="basemap"))
@@ -3013,8 +3301,8 @@ def render_basemap_controls() -> None:
 def render_sidebar(principal: auth.Principal) -> None:
     """Sol menüyü çizer: marka, kullanıcı kartı ve çıkış, ardından role göre ayarlar.
 
-    Sigortacı senaryo tohumunu, harita altlığını ve sistem kartını görür; müşteri yalnızca harita altlığını
-    (tohum ve sürüm bilgisi yok).
+    Sigortacı karar kurallarını, harita altlığını, "Gelişmiş" altındaki senaryo tohumunu ve sistem kartını görür;
+    müşteri yalnızca harita altlığını (kural, tohum ve sürüm bilgisi yok).
 
     Args:
         principal: Oturum açmış kullanıcı.
@@ -3024,14 +3312,15 @@ def render_sidebar(principal: auth.Principal) -> None:
         render_html(build_user_card_html(principal))
         st.button("Çıkış yap", on_click=logout, key="auth_logout")
         if principal.role is auth.Role.INSURER:
-            render_html('<div class="side-label"><b>01</b> SENARYO</div>')
-            st.number_input("Veri tohumu (seed)", min_value=1, max_value=99999, value=2026, step=1, key="seed")
-            st.caption("Aynı tohum her zaman aynı sentetik senaryoyu üretir.")
+            render_rule_controls()
             render_html('<div class="side-label"><b>02</b> HARİTA</div>')
         else:
             render_html('<div class="side-label"><b>01</b> HARİTA</div>')
         render_basemap_controls()
         if principal.role is auth.Role.INSURER:
+            with st.expander("Gelişmiş"):
+                st.number_input("Veri tohumu (seed)", min_value=1, max_value=99999, value=2026, step=1, key="seed")
+                st.caption("Aynı tohum her zaman aynı sentetik senaryoyu üretir.")
             render_html(f"""
             <div class="sys-card">
               <b>VERİ</b> Demo · sentetik<br><b>ADAPTÖR</b> Sentinel-2 · FIRMS<br><b>MOTOR</b> numpy {_h(np.__version__)}<br>
@@ -3063,15 +3352,32 @@ def safe_render(renderer: Callable[[], None], name: str) -> None:
         render_html(f'<div class="note err"><b>{_h(name)}</b> sekmesi çizilemedi: {detail}</div>')
 
 
+#: "Diğer sektörler" sekmesinin alt sekmeleri: etiket → (hata iletisinde görünen ad, çizici).
+SECTOR_RENDERERS: Dict[str, Tuple[str, Callable[[], None]]] = {
+    "Tarım": ("Tarım", render_agriculture_tab),
+    "Belediye": ("Belediye", render_municipality_tab),
+    "Kurtarma": ("Kurtarma", render_rescue_tab),
+}
+
+
+def render_sectors_tab() -> None:
+    """DİĞER SEKTÖRLER sekmesini çizer: tarım, belediye ve kurtarma modülleri alt sekmelerde durur."""
+    auth.require(session_principal(), auth.PERM_SECTORS)
+    render_html(build_section_title("DİĞER SEKTÖRLER", "aynı uydu çekirdeği, üç genişleme alanı"))
+    labels = list(SECTOR_RENDERERS)
+    for tab, label in zip(st.tabs(labels), labels):
+        title, renderer = SECTOR_RENDERERS[label]
+        with tab:
+            safe_render(renderer, title)
+
+
 #: Sigortacı sekme etiketi → (hata iletisinde görünen ad, çizici). Etiketler ``auth.INSURER_TABS`` ile birebir aynıdır.
 TAB_RENDERERS: Dict[str, Tuple[str, Callable[[], None]]] = {
     "GENEL BAKIŞ": ("Genel Bakış", render_overview_tab),
     "SİGORTA": ("Sigorta", render_insurance_tab),
     "MÜŞTERİ PORTALI": ("Müşteri portalı", render_portal_preview_tab),
     "KALİBRASYON": ("Kalibrasyon", render_calibration_tab),
-    "TARIM": ("Tarım", render_agriculture_tab),
-    "BELEDİYE": ("Belediye", render_municipality_tab),
-    "KURTARMA": ("Kurtarma", render_rescue_tab),
+    "DİĞER SEKTÖRLER": ("Diğer sektörler", render_sectors_tab),
 }
 
 

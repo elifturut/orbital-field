@@ -32,6 +32,7 @@ __all__ = [
     "CUSTOMER_COLUMNS", "INTERNAL_COLUMNS", "STATUS_LABELS", "HEADLINES", "REASON_TEXT", "VISIBILITY",
     "Step", "CustomerView", "customer_ranking", "customers_table", "customer_no", "resolve_customer", "build_view",
     "steps_for", "own_geojson", "own_parcel_svg", "build_notice_html", "notice_filename", "NOTICE_CSS",
+    "PRODUCTIVITY_COLUMNS", "ProductivityView", "build_productivity", "productivity_text",
 ]
 
 #: Müşteri tablosuna girebilen sütunlar (beyaz liste).
@@ -43,6 +44,11 @@ CUSTOMER_COLUMNS: Tuple[str, ...] = (
 INTERNAL_COLUMNS: Tuple[str, ...] = (
     "sigortali", "risk_skoru", "risk_sinifi", "guven", "dnbr", "nbr_once", "nbr_sonra", "ndvi_once", "ndvi_sonra",
     "siddet_no", "gerekce",
+)
+#: Verimlilik tablosuna girebilen sütunlar (beyaz liste); ham ölçüm, risk ve eşik içermez.
+PRODUCTIVITY_COLUMNS: Tuple[str, ...] = (
+    "police_no", "parsel_id", "varlik_turu", "alan_ha", "verim_skoru", "olay_kaybi_pct", "beklenen_t_ha",
+    "tahmini_t_ha", "fark_pct", "beklenen_toplam_t", "tahmini_toplam_t", "seyir",
 )
 STATUS_LABELS: Dict[str, str] = {
     "ONAY": "Onaylandı", "KISMİ ONAY": "Kısmen onaylandı (avans)", "EKSPERTİZ": "Ekspertiz bekleniyor",
@@ -69,6 +75,7 @@ VISIBILITY: Tuple[Tuple[str, bool, bool], ...] = (
     ("Karar, ödenecek ve bekleyen tutar", True, True),
     ("Sade dille gerekçe ve takip adımları", True, True),
     ("Kendi parselinin uydu haritası", True, True),
+    ("Kendi parsellerinin bitki gelişimi ve tahmini verim (beklenene oranla)", True, True),
     ("Karar bildirimi (kendi poliçesi)", True, True),
     ("Diğer müşterilerin poliçe ve kararları", False, True),
     ("Poliçe risk skoru ve risk sınıfı", False, True),
@@ -224,6 +231,89 @@ def build_view(claims: pd.DataFrame, name: str, rules: ClaimRules) -> CustomerVi
         name=name, number=customer_no(name), policies=frame, positions=tuple(int(p) for p in positions),
         total_insured=float(frame["sigorta_bedeli_tl"].sum()), total_paid=float(frame["odenecek_tl"].sum()),
         total_pending=float(frame["bekleyen_tl"].sum()), counts=counts)
+
+
+@dataclass(frozen=True)
+class ProductivityView:
+    """Müşterinin kendi parsellerinin verimlilik takibi (yalnızca kendi satırları; ham ölçüm yok).
+
+    Attributes:
+        table: ``PRODUCTIVITY_COLUMNS`` sütunlu tablo (``CustomerView.policies`` ile aynı sırada).
+        dates: Gözlem tarihleri; sonuncusu olay sonrası gözlem.
+        index: ``{police_no: gelişim indeksi dizisi}``; yalnızca takip edilen parseller (100 = beklenen düzey).
+        event_index: Olay sonrası gözlemin konumu.
+        tracked: Takip edilen parsel sayısı.
+        mean_score: Alan ağırlıklı sezon seyri skoru (%); takip edilen parsel yoksa ``None``.
+        mean_loss: Alan ağırlıklı olay kaybı (%); takip edilen parsel yoksa ``None``.
+        forecast_index: Alan ağırlıklı tahmini verim / beklenen verim (%); takip edilen parsel yoksa ``None``.
+    """
+
+    table: pd.DataFrame
+    dates: pd.DatetimeIndex
+    index: Dict[str, np.ndarray]
+    event_index: int
+    tracked: int
+    mean_score: Optional[float]
+    mean_loss: Optional[float]
+    forecast_index: Optional[float]
+
+
+def build_productivity(prod: de.ProductivityDataset, view: CustomerView) -> ProductivityView:
+    """Tüm parsellerin verimlilik verisinden YALNIZCA müşterinin kendi satırlarını ve eğrilerini alır.
+
+    Args:
+        prod: ``data_engine.simulate_productivity`` çıktısı (tüm parseller; müşteriye doğrudan verilmez).
+        view: ``build_view`` çıktısı (``positions`` ve ``policies`` kendi parsellerinin konumudur).
+
+    Returns:
+        ``ProductivityView``.
+
+    Raises:
+        ValueError: ``prod`` ile ``view`` uyuşmuyorsa (konum aralık dışı).
+    """
+    pos = list(view.positions)
+    if len(prod.table) <= max(pos):
+        raise ValueError("Verimlilik verisi parsel sayısıyla uyuşmuyor.")
+    own = prod.table.iloc[pos].reset_index(drop=True)
+    pol = view.policies.reset_index(drop=True)
+    table = pd.concat([pol[["police_no", "parsel_id", "varlik_turu", "alan_ha"]],
+                       own[[c for c in PRODUCTIVITY_COLUMNS if c in own.columns]]], axis=1)[list(PRODUCTIVITY_COLUMNS)]
+    mask = own["takip"].to_numpy(dtype=bool)
+    index = {str(pol.at[i, "police_no"]): prod.index[p].copy() for i, p in enumerate(pos) if mask[i]}
+    area = pol["alan_ha"].to_numpy(dtype=float)
+    if mask.any():
+        w = area[mask]
+        expected = own["beklenen_t_ha"].to_numpy(dtype=float)[mask]
+        forecast = own["tahmini_t_ha"].to_numpy(dtype=float)[mask]
+        mean_score = float(np.average(own["verim_skoru"].to_numpy(dtype=float)[mask], weights=w))
+        mean_loss = float(np.average(own["olay_kaybi_pct"].to_numpy(dtype=float)[mask], weights=w))
+        forecast_index = float(np.average(100.0 * forecast / expected, weights=w))
+    else:
+        mean_score = mean_loss = forecast_index = None
+    return ProductivityView(table=table, dates=prod.dates, index=index, event_index=prod.event_index,
+                            tracked=int(mask.sum()), mean_score=mean_score, mean_loss=mean_loss,
+                            forecast_index=forecast_index)
+
+
+def productivity_text(row: pd.Series) -> str:
+    """Bir parselin verimlilik durumunu sade dille anlatır (ham ölçüm ve eşik içermez).
+
+    Args:
+        row: ``ProductivityView.table`` satırı.
+
+    Returns:
+        Kısa açıklama cümleleri.
+    """
+    if str(row["seyir"]) == de.NOT_TRACKED:
+        return f'{row["varlik_turu"]} bitki üretmediği için bu varlık türünde verim takibi yapılmaz.'
+    parts = [f'Sezon boyunca bitki gelişimi beklenen seyre göre %{format_tr(float(row["verim_skoru"]), 0)} düzeyinde '
+             f'kaldı ({str(row["seyir"]).lower()}).']
+    loss = float(row["olay_kaybi_pct"])
+    if loss >= 1.0:
+        parts.append(f"Olay nedeniyle tahmini verim ayrıca %{format_tr(loss, 0)} azaldı.")
+    parts.append(f'Sezon sonu tahmini verim {format_tr(float(row["tahmini_t_ha"]), 1)} ton/ha; '
+                 f'normal bir sezonda beklenen {format_tr(float(row["beklenen_t_ha"]), 1)} ton/ha.')
+    return " ".join(parts)
 
 
 def steps_for(decision: str, event_date: dt.date, paid: float, pending: float, advance_pct: float) -> Tuple[Step, ...]:

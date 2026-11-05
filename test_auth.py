@@ -157,7 +157,8 @@ try:
 except PermissionError:
     check("izinli require sessiz geçer", False)
 check("bilinmeyen izin hiçbir role verilmez", not auth.allowed(ins, "yok.izin") and not auth.allowed(cus, "yok.izin"))
-check("sekmeler: sigortacı yedi, müşteri/oturumsuz sıfır", auth.tabs_for(ins) == auth.INSURER_TABS and len(auth.INSURER_TABS) == 7 and auth.tabs_for(cus) == () and auth.tabs_for(None) == ())
+check("sekmeler: sigortacı beş, müşteri/oturumsuz sıfır", auth.tabs_for(ins) == auth.INSURER_TABS and len(auth.INSURER_TABS) == 5 and auth.tabs_for(cus) == () and auth.tabs_for(None) == ())
+check("sektör sekmeleri tek 'DİĞER SEKTÖRLER' altında", auth.INSURER_TABS[-1] == "DİĞER SEKTÖRLER" and not {"TARIM", "BELEDİYE", "KURTARMA"} & set(auth.INSURER_TABS))
 check("müşteri portalı sekmesi sigortacıda var", "MÜŞTERİ PORTALI" in auth.INSURER_TABS)
 
 # --- oturum serileştirme

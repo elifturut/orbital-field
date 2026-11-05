@@ -285,6 +285,100 @@ for i in range(0, len(claims2), 7):
     leaks += bool(re.search(r"(?<![\d,.])0,(44|26|12|81)(?![\d])", html_i))
 check("özel eşiklerle de bildirimde eşik sayısı yok", leaks == 0, leaks)
 
+# ============================== verimlilik takibi ==============================
+print("== verimlilik takibi")
+ds_p, rules_p, claims_p = world()
+prod_p = de.simulate_productivity(ds_p.parcels, ds_p.event_date, claims_p["hasar_yuzdesi"].to_numpy(), 2026)
+check("verimlilik: tablo parselle aynı uzunlukta, tek tohumda deterministik",
+      len(prod_p.table) == len(ds_p.parcels) and prod_p.table.equals(
+          de.simulate_productivity(ds_p.parcels, ds_p.event_date, claims_p["hasar_yuzdesi"].to_numpy(), 2026).table))
+check("verimlilik: farklı tohum farklı sonuç",
+      not prod_p.table.equals(de.simulate_productivity(ds_p.parcels, ds_p.event_date, claims_p["hasar_yuzdesi"].to_numpy(), 7).table))
+trk = prod_p.table["takip"].to_numpy()
+check("verimlilik: yalnızca Tarımsal Tesis takip dışı", set(ds_p.parcels.loc[~trk, "varlik_turu"]) == {"Tarımsal Tesis"} and (~trk).any())
+check("verimlilik: takip edilenlerde sayılar sonlu ve pozitif",
+      np.isfinite(prod_p.table.loc[trk, ["verim_skoru", "beklenen_t_ha", "tahmini_t_ha", "beklenen_toplam_t"]].to_numpy()).all()
+      and (prod_p.table.loc[trk, "beklenen_t_ha"] > 0).all() and (prod_p.table.loc[trk, "tahmini_t_ha"] >= 0).all())
+check("verimlilik: takip dışı parsellerde sayı ve eğri NaN, etiket 'Takip edilmiyor'",
+      prod_p.table.loc[~trk, "tahmini_t_ha"].isna().all() and np.isnan(prod_p.index[~trk]).all()
+      and (prod_p.table.loc[~trk, "seyir"] == de.NOT_TRACKED).all())
+check("verimlilik: eğri sonlu, tarihler artan, sonuncusu olay tarihi",
+      np.isfinite(prod_p.index[trk]).all() and prod_p.dates.is_monotonic_increasing and prod_p.dates[-1].date() == ds_p.event_date
+      and prod_p.event_index == len(prod_p.dates) - 1 and prod_p.index.shape == (len(ds_p.parcels), len(prod_p.dates)))
+d_all = claims_p["hasar_yuzdesi"].to_numpy()
+lo = np.flatnonzero(trk & (d_all < 5))
+hi = np.flatnonzero(trk & (d_all > 80))
+check("verimlilik: ağır hasarlı parselin olay sonrası göstergesi hafif hasarlıdan düşük",
+      lo.size > 3 and hi.size > 3 and prod_p.index[hi, -1].mean() < 0.5 * prod_p.index[lo, -1].mean())
+check("verimlilik: ağır hasarlı parselin tahmini verimi beklenenin altında",
+      (prod_p.table.loc[hi, "tahmini_t_ha"] < 0.5 * prod_p.table.loc[hi, "beklenen_t_ha"]).all())
+zero = de.simulate_productivity(ds_p.parcels, ds_p.event_date, np.zeros(len(ds_p.parcels)), 2026)
+full = de.simulate_productivity(ds_p.parcels, ds_p.event_date, np.full(len(ds_p.parcels), 100.0), 2026)
+check("verimlilik: hasar yükseldikçe tahmini verim yalnızca düşer (aynı parsel, aynı tohum)",
+      (full.table.loc[trk, "tahmini_t_ha"] <= zero.table.loc[trk, "tahmini_t_ha"]).all()
+      and (full.table.loc[trk, "tahmini_t_ha"] == 0).all() and (zero.table.loc[trk, "olay_kaybi_pct"] == 0).all())
+check("verimlilik: hasar, olay öncesi sezon seyrini değiştirmez",
+      np.array_equal(full.table["verim_skoru"].fillna(-1), zero.table["verim_skoru"].fillna(-1))
+      and np.allclose(full.index[trk][:, :-1], zero.index[trk][:, :-1]))
+check("verimlilik: etiket sınırları", [de.track_label(v) for v in (50, 69.9, 70, 84.9, 85, 94.9, 95, 120)] ==
+      ["Belirgin geride", "Belirgin geride", "Geride", "Geride", "Hafif geride", "Hafif geride", "Beklenen seyirde", "Beklenen seyirde"])
+for bad in (np.zeros(3), np.full(len(ds_p.parcels), np.nan)):
+    try:
+        de.simulate_productivity(ds_p.parcels, ds_p.event_date, bad, 2026)
+        check("verimlilik: geçersiz hasar dizisi hata verir", False)
+    except ValueError:
+        check("verimlilik: geçersiz hasar dizisi hata verir", True)
+# uç tarih: yılın ilk günleri
+early = de.simulate_productivity(ds_p.parcels, dt.date(2026, 1, 3), d_all, 2026)
+check("verimlilik: olay yılın başında da çalışır (tarihler tekrarsız)", early.dates.is_unique and np.isfinite(early.index[trk]).all())
+
+pnames = pt.customer_ranking(claims_p)
+leak_bad = []
+for nm in pnames:
+    v = pt.build_view(claims_p, nm, rules_p)
+    pv = pt.build_productivity(prod_p, v)
+    own_pn = set(v.policies["police_no"])
+    if list(pv.table.columns) != list(pt.PRODUCTIVITY_COLUMNS):
+        leak_bad.append((nm, "sütunlar"))
+    if list(pv.table["police_no"]) != list(v.policies["police_no"]):
+        leak_bad.append((nm, "sıra/satır"))
+    if not set(pv.index) <= own_pn:
+        leak_bad.append((nm, "eğri anahtarı"))
+    # değerler gerçekten kendi parsellerinden mi (konum üzerinden)
+    for i, pos in enumerate(v.positions):
+        if prod_p.table.at[pos, "tahmini_t_ha"] == prod_p.table.at[pos, "tahmini_t_ha"] and \
+                pv.table.at[i, "tahmini_t_ha"] != prod_p.table.at[pos, "tahmini_t_ha"]:
+            leak_bad.append((nm, "değer"))
+    if pv.tracked != int(prod_p.table.iloc[list(v.positions)]["takip"].sum()) or pv.tracked != len(pv.index):
+        leak_bad.append((nm, "sayaç"))
+check(f"verimlilik: {len(pnames)} müşterinin tümünde yalnızca kendi satırları, beyaz liste sütunları, doğru değerler", not leak_bad, leak_bad[:3])
+check("verimlilik: beyaz liste ile iç sütunlar kesişmez",
+      not (set(pt.PRODUCTIVITY_COLUMNS) & set(pt.INTERNAL_COLUMNS)) and not (set(pt.PRODUCTIVITY_COLUMNS) & {"risk_skoru", "dnbr", "guven", "gerekce", "sigortali"}))
+v0 = pt.build_view(claims_p, pnames[0], rules_p)
+pv0 = pt.build_productivity(prod_p, v0)
+check("verimlilik: özet yüzdeler sonlu ve beklenen aralıkta",
+      pv0.tracked > 0 and 50 < pv0.mean_score < 130 and 0 <= pv0.mean_loss <= 100 and 0 <= pv0.forecast_index < 160)
+for _, r in pv0.table.iterrows():
+    t = pt.productivity_text(r)
+    if not (t and "None" not in t and "nan" not in t.lower() and not re.search(r"dnbr|ndvi|risk|güven|eşik", t, re.I)):
+        check(f"verimlilik: sade dilli metin temiz ({r['police_no']})", False, t)
+        break
+else:
+    check("verimlilik: sade dilli metin temiz (ham ölçüm, eşik, NaN içermez)", True)
+tt = pt.productivity_text(pv0.table.assign(seyir=de.NOT_TRACKED, varlik_turu="Tarımsal Tesis").iloc[0])
+check("verimlilik: takip dışı varlık için açıklama", "Tarımsal Tesis" in tt and "takibi yapılmaz" in tt)
+# tamamen takip dışı müşteri (varsayımsal): görünüm çökmez
+off = replace(prod_p, table=prod_p.table.assign(takip=False))
+pv_off = pt.build_productivity(off, v0)
+check("verimlilik: takip edilen parseli olmayan müşteri için görünüm çökmez", pv_off.tracked == 0 and pv_off.mean_score is None and not pv_off.index)
+try:
+    pt.build_productivity(replace(prod_p, table=prod_p.table.iloc[:3]), v0)
+    check("verimlilik: uyumsuz veri boyutu hata verir", False)
+except ValueError:
+    check("verimlilik: uyumsuz veri boyutu hata verir", True)
+check("görünürlük tablosunda verimlilik satırı var (müşteri ✓, sigortacı ✓)",
+      any("verim" in lbl and c and i for lbl, c, i in pt.VISIBILITY))
+
 # geometri/sıra uyumsuzluğu
 try:
     pt.own_parcel_svg(ds.geometry, 10_000, SEV[0], "x")

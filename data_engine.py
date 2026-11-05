@@ -34,7 +34,7 @@ import datetime as dt
 import json
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -991,6 +991,160 @@ class AgricultureSimulator:
             "revenue_tl": float(f["gelir_tahmini_tl"].sum()),
             "stress_days": float(sum(p.days for p in ds.stress_periods)),
         }
+
+
+# =========================================================================== #
+# 2b) SİGORTA — Parsel verimlilik takibi (müşteri portalı)
+# =========================================================================== #
+@dataclass(frozen=True)
+class YieldProfile:
+    """Bir varlık türünün bitki gelişimi ve verim referansı (ÖRNEK değerler; gerçek kayıtlarla kalibre edilmedi).
+
+    Attributes:
+        base_ndvi: Dinlenme dönemi NDVI.
+        peak_ndvi: Tepe NDVI.
+        sos: Gelişim başlangıcı (yılın günü).
+        eos: Gelişimin sona erdiği gün (yılın günü).
+        rise_k: Yükseliş eğimi (gün).
+        fall_k: Düşüş eğimi (gün).
+        base_yield: Normal bir sezonda beklenen verim (ton/ha).
+    """
+
+    base_ndvi: float
+    peak_ndvi: float
+    sos: float
+    eos: float
+    rise_k: float
+    fall_k: float
+    base_yield: float
+
+
+_WHEAT = CROPS[0]
+#: Varlık türü → verim referansı. ``Tarımsal Tesis`` bitki üretmediği için yoktur (takip edilmez).
+YIELD_PROFILES: Dict[str, YieldProfile] = {
+    "Zeytinlik": YieldProfile(0.34, 0.52, 95.0, 290.0, 22.0, 22.0, 2.8),
+    "Narenciye Bahçesi": YieldProfile(0.52, 0.70, 70.0, 320.0, 28.0, 28.0, 28.0),
+    "Tahıl Tarlası": YieldProfile(_WHEAT.base_ndvi, _WHEAT.peak_ndvi, _WHEAT.sos, _WHEAT.eos, _WHEAT.rise_k,
+                                  _WHEAT.fall_k, _WHEAT.base_yield),
+    "Fındık / Meyve Bahçesi": YieldProfile(0.22, 0.78, 105.0, 270.0, 14.0, 16.0, 3.5),
+    "Sera": YieldProfile(0.45, 0.76, 35.0, 330.0, 18.0, 18.0, 110.0),
+}
+#: Sezon seyri etiketleri (düşükten yükseğe) ve skor sınırları (%).
+TRACK_LABELS: Tuple[str, ...] = ("Belirgin geride", "Geride", "Hafif geride", "Beklenen seyirde")
+TRACK_EDGES: Tuple[float, ...] = (70.0, 85.0, 95.0)
+NOT_TRACKED = "Takip edilmiyor"
+#: Olay sonrası gözlemde bitki örtüsü, hasar oranının bu katı kadar azalır.
+EVENT_NDVI_LOSS = 0.9
+
+
+def track_label(score: float) -> str:
+    """Sezon seyri skorunu (%) etikete çevirir.
+
+    Args:
+        score: Sezon seyri skoru (beklenen seyir = 100).
+
+    Returns:
+        ``TRACK_LABELS`` içinden bir etiket.
+    """
+    return TRACK_LABELS[int(np.digitize(score, TRACK_EDGES))]
+
+
+@dataclass(frozen=True)
+class ProductivityDataset:
+    """Tüm parseller için verimlilik takibi (müşteri portalı bunu YALNIZCA ``portal.build_productivity`` ile süzer).
+
+    Attributes:
+        table: Parsellerle aynı sırada tablo (``takip``, ``verim_skoru``, ``olay_kaybi_pct``, ``beklenen_t_ha``,
+            ``tahmini_t_ha``, ``fark_pct``, ``beklenen_toplam_t``, ``tahmini_toplam_t``, ``seyir``); takip
+            edilmeyen parsellerde sayılar ``NaN``.
+        dates: Gözlem tarihleri (8 günlük kompozitler + olay sonrası gözlem; sonuncusu olay sonrası).
+        index: Bitki gelişim indeksi, şekil ``(parsel, gözlem)``; 100 = o tarihte beklenen düzey, takip edilmeyende ``NaN``.
+        event_index: Olay sonrası gözlemin ``dates`` içindeki konumu (son indeks).
+    """
+
+    table: pd.DataFrame
+    dates: pd.DatetimeIndex
+    index: np.ndarray
+    event_index: int
+
+
+def simulate_productivity(parcels: pd.DataFrame, event_date: dt.date, damage_pct: np.ndarray,
+                          seed: int = 2026) -> ProductivityDataset:
+    """Her parsel için olay tarihine kadarki bitki gelişimini ve sezon sonu verim tahminini üretir.
+
+    Gelişim, varlık türünün çift lojistik fenoloji eğrisi etrafında parsele özgü bir sağlık çarpanıyla
+    sapar. ``index = 100 · gerçek / beklenen``. Sezon seyri skoru, olay öncesi (gerçek − taban) toplamının
+    beklenene oranıdır. Tahmini verim = referans · skor^1,15 · (1 − hasar oranı); hasar oranı, karar tablosundaki
+    ``hasar_yuzdesi``'dir (müşteri zaten görür); ham ölçüm kullanılmaz.
+
+    Args:
+        parcels: Parsel tablosu (``varlik_turu``, ``alan_ha`` sütunları).
+        event_date: Olay sonrası görüntü tarihi (son gözlem).
+        damage_pct: Parsel başına hasar oranı (0–100), ``parcels`` ile aynı sırada.
+        seed: Tohum değeri.
+
+    Returns:
+        ``ProductivityDataset``.
+
+    Raises:
+        ValueError: ``damage_pct`` uzunluğu parsel sayısıyla uyuşmuyorsa ya da sonlu değilse.
+    """
+    n = len(parcels)
+    damage = np.asarray(damage_pct, dtype=float)
+    if damage.shape != (n,) or not np.isfinite(damage).all():
+        raise ValueError("damage_pct parsel sayısıyla aynı uzunlukta ve sonlu olmalı.")
+    damage = np.clip(damage, 0.0, 100.0) / 100.0
+    rng = make_rng(seed, 41)
+    event_doy = event_date.timetuple().tm_yday
+    pre = np.arange(1, max(event_doy - 3, 2), 8, dtype=float)
+    pre = pre[pre < event_doy]
+    doy = np.append(pre, float(event_doy))
+    assets = parcels["varlik_turu"].to_numpy()
+    tracked = np.array([a in YIELD_PROFILES for a in assets], dtype=bool)
+
+    def col(getter: Callable[[YieldProfile], float]) -> np.ndarray:
+        return np.array([getter(YIELD_PROFILES[a]) if a in YIELD_PROFILES else np.nan for a in assets])[:, None]
+
+    base = col(lambda p: p.base_ndvi) + rng.normal(0.0, 0.01, (n, 1))
+    peak = col(lambda p: p.peak_ndvi) * rng.normal(1.0, 0.04, (n, 1))
+    sos = col(lambda p: p.sos) + rng.normal(0.0, 5.0, (n, 1))
+    eos = col(lambda p: p.eos) + rng.normal(0.0, 6.0, (n, 1))
+    health = np.clip(rng.normal(0.95, 0.07, (n, 1)), 0.62, 1.08)
+    phase = rng.uniform(0.0, 2.0 * np.pi, (n, 1))
+    noise = rng.normal(0.0, 0.012, (n, doy.size))
+    yield_noise = rng.normal(1.0, 0.03, n)
+
+    nominal = _double_logistic(doy[None, :], base, peak, sos, eos, col(lambda p: p.rise_k), col(lambda p: p.fall_k))
+    health_t = health + 0.03 * np.sin(2.0 * np.pi * doy[None, :] / 365.0 + phase)
+    actual = base + (nominal - base) * health_t + noise
+    actual[:, -1] = actual[:, -1] * (1.0 - EVENT_NDVI_LOSS * damage)          # olay sonrası gözlem
+    actual = np.clip(actual, 0.02, 0.93)
+    index = 100.0 * actual / np.clip(nominal, 0.05, None)
+
+    integ_obs = np.clip(actual[:, :-1] - base, 0.0, None).sum(axis=1)
+    integ_nom = np.clip(nominal[:, :-1] - base, 0.0, None).sum(axis=1)
+    with np.errstate(invalid="ignore"):
+        ratio = np.clip(integ_obs / np.clip(integ_nom, 1e-6, None), 0.3, 1.3)
+    expected = col(lambda p: p.base_yield)[:, 0]
+    forecast = expected * ratio ** 1.15 * yield_noise * (1.0 - damage)
+    area = parcels["alan_ha"].to_numpy(dtype=float)
+    score = ratio * 100.0
+    labels = np.array([track_label(sc) if t else NOT_TRACKED for sc, t in zip(np.nan_to_num(score), tracked)],
+                      dtype=object)
+    table = pd.DataFrame({
+        "takip": tracked,
+        "verim_skoru": score.round(0),
+        "olay_kaybi_pct": np.where(tracked, damage * 100.0, np.nan).round(0),
+        "beklenen_t_ha": expected.round(2),
+        "tahmini_t_ha": forecast.round(2),
+        "fark_pct": ((forecast / expected - 1.0) * 100.0).round(0),
+        "beklenen_toplam_t": (expected * area).round(1),
+        "tahmini_toplam_t": (forecast * area).round(1),
+        "seyir": labels,
+    })
+    dates = pd.DatetimeIndex([dt.date(event_date.year, 1, 1) + dt.timedelta(days=int(d) - 1) for d in doy])
+    index = np.where(tracked[:, None], index, np.nan)
+    return ProductivityDataset(table=table, dates=dates, index=index, event_index=int(doy.size - 1))
 
 
 # =========================================================================== #

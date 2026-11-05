@@ -64,9 +64,8 @@ ROLE_PERMISSIONS: Dict[Role, FrozenSet[str]] = {
     Role.CUSTOMER: frozenset({PERM_PORTAL_OWN}),
 }
 
-#: Sigortacı için sekme sırası.
-INSURER_TABS: Tuple[str, ...] = ("GENEL BAKIŞ", "SİGORTA", "MÜŞTERİ PORTALI", "KALİBRASYON", "TARIM", "BELEDİYE",
-                                 "KURTARMA")
+#: Sigortacı için ana sekme sırası: dört çekirdek sekme ve tarım/belediye/kurtarmayı toplayan genişleme sekmesi.
+INSURER_TABS: Tuple[str, ...] = ("GENEL BAKIŞ", "SİGORTA", "MÜŞTERİ PORTALI", "KALİBRASYON", "DİĞER SEKTÖRLER")
 
 
 @dataclass(frozen=True)
