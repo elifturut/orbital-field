@@ -140,9 +140,9 @@ forbidden_words = ("dnbr", "nbr", "ndvi", "eşik", "esik", "risk", "skor", "güv
 check("müşteri gerekçelerinde sayı yok", not any(digit.search(t) for t in pt.REASON_TEXT.values()))
 check("müşteri gerekçelerinde iç terim yok", not any(w in t.lower() for t in pt.REASON_TEXT.values() for w in forbidden_words))
 check("başlıklarda sayı ve iç terim yok", not any(digit.search(t) or any(w in t.lower() for w in forbidden_words) for t in list(pt.HEADLINES.values()) + list(pt.STATUS_LABELS.values())))
-check("gerekçe sözlüğü kural izinin tüm nedenlerini kapsar", set(pt.REASON_TEXT) == {"inactive", "below_review", "approve", "partial", "low_confidence", "borderline"})
+check("gerekçe sözlüğü kural izinin tüm nedenlerini kapsar", set(pt.REASON_TEXT) == {"inactive", "below_review", "approve", "partial", "low_confidence", "borderline", "insurer"})
 check("her karar için başlık ve durum var", set(pt.HEADLINES) == set(pt.STATUS_LABELS) == set(de.DECISION_LABELS))
-check("görünürlük tablosu: müşterinin gördüğü her şeyi sigortacı da görür", all(ins_ok for _, cust, ins_ok in pt.VISIBILITY if cust))
+check("görünürlük tablosu: müşterinin gördüğü her şeyi sigortacı da görür", all(ins_ok for label, cust, ins_ok in pt.VISIBILITY if cust and "başka şirket" not in label))
 check("görünürlük tablosu: risk ve ölçüm müşteriden gizli", all(not cust for label, cust, _ in pt.VISIBILITY if any(w in label.lower() for w in ("risk", "dnbr", "eşik", "kalibrasyon", "kanıt", "diğer müşteri"))))
 
 # ============================== adımlar ==============================
@@ -168,7 +168,7 @@ except KeyError:
 gj = pt.own_geojson(ds.geometry, v, SEV)
 text = json.dumps(gj, ensure_ascii=False)
 check("geojson: yalnızca kendi parselleri", len(gj["features"]) == len(v.policies) and {f["id"] for f in gj["features"]} == set(v.positions))
-check("geojson: özellikler beyaz listeden", all(set(f["properties"]) == {"police_no", "varlik_turu", "alan_txt", "bedel_txt", "siddet", "durum", "odeme_txt", "bekleyen_txt", "renk"} for f in gj["features"]))
+check("geojson: özellikler beyaz listeden", all(set(f["properties"]) == {"police_no", "varlik_turu", "sirket", "alan_txt", "bedel_txt", "siddet", "durum", "odeme_txt", "bekleyen_txt", "renk"} for f in gj["features"]))
 check("geojson: iç alan adı yok", not any(w in text for w in ("risk", "dnbr", "guven", "ndvi", "nbr", "sigortali", "gerekce")))
 other = next(n for n in names if n != names[0])
 check("geojson: başka müşterinin poliçe no'su yok", not any(pn in text for pn in claims[claims["sigortali"] == other]["police_no"]))

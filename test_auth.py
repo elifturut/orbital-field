@@ -7,6 +7,7 @@ from dataclasses import FrozenInstanceError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import auth  # noqa: E402
+import tenancy  # noqa: E402
 from auth import LoginState, Principal, Role  # noqa: E402
 
 FAILS = []
@@ -23,16 +24,20 @@ PW = auth.DEMO_PASSWORDS
 T0 = 1_000_000.0
 
 # --- demo hesapları
-check("4 demo hesabı: 1 sigortacı + 3 müşteri", len(ACC) == 4 and sum(a.role is Role.INSURER for a in ACC) == 1)
-check("kullanıcı adları benzersiz ve normal", len({a.username for a in ACC}) == 4 and all(a.username == auth.normalise_username(a.username) for a in ACC))
+check("5 demo hesabı: 2 sigortacı + 3 müşteri", len(ACC) == 5 and sum(a.role is Role.INSURER for a in ACC) == 2)
+check("kullanıcı adları benzersiz ve normal", len({a.username for a in ACC}) == 5 and all(a.username == auth.normalise_username(a.username) for a in ACC))
 check("her demo parolası saklı özetle eşleşir", all(auth.verify_password(PW[a.username], a.salt_hex, a.hash_hex, a.iterations) for a in ACC))
 check("demo parolaları birbirine uymaz", all(not auth.verify_password(PW[b.username], a.salt_hex, a.hash_hex, a.iterations) for a in ACC for b in ACC if a is not b))
-check("demo tuzları benzersiz", len({a.salt_hex for a in ACC}) == 4)
-check("demo özetleri benzersiz ve 32 bayt", len({a.hash_hex for a in ACC}) == 4 and all(len(bytes.fromhex(a.hash_hex)) == 32 for a in ACC))
+check("demo tuzları benzersiz", len({a.salt_hex for a in ACC}) == 5)
+check("demo özetleri benzersiz ve 32 bayt", len({a.hash_hex for a in ACC}) == 5 and all(len(bytes.fromhex(a.hash_hex)) == 32 for a in ACC))
 check("demo tur sayısı yeterli", all(a.iterations >= auth.MIN_ITERATIONS for a in ACC))
 check("demo parolaları düz metin olarak hesaplarda yok", all(PW[a.username] not in repr(a) for a in ACC))
 check("müşteri sıralamaları 1,2,3", sorted(a.customer_rank for a in ACC if a.role is Role.CUSTOMER) == [1, 2, 3])
 check("sigortacıda müşteri eşlemesi yok", all(a.customer_rank is None and a.customer_name is None for a in ACC if a.role is Role.INSURER))
+INS_ACC = [a for a in ACC if a.role is Role.INSURER]
+check("demo sigortacılar farklı, geçerli şirketlere bağlı", len({a.company for a in INS_ACC}) == 2 and all(tenancy.valid_company(a.company) for a in INS_ACC))
+check("demo sigortacıların unvanı var", all(a.title for a in INS_ACC))
+check("müşteri hesabı bir şirkete bağlı değil", all(a.company is None for a in ACC if a.role is Role.CUSTOMER))
 try:
     ACC[0].username = "x"  # type: ignore[misc]
     check("hesap değiştirilemez", False)
@@ -64,7 +69,8 @@ check("kullanıcı adı normalleşir", auth.normalise_username("  SigortaCI ") =
 for acc in ACC:
     res = auth.authenticate(ACC, acc.username, PW[acc.username], LoginState(), T0)
     check(f"giriş başarılı: {acc.username}", res.code == "ok" and res.principal is not None and res.principal.role is acc.role
-          and res.principal.username == acc.username and res.principal.customer_rank == acc.customer_rank)
+          and res.principal.username == acc.username and res.principal.customer_rank == acc.customer_rank
+          and res.principal.company == acc.company and res.principal.title == acc.title)
 check("kullanıcı adında boşluk/büyük harf", auth.authenticate(ACC, "  SIGORTACI ", PW["sigortaci"], LoginState(), T0).code == "ok")
 check("parolada büyük/küçük harf önemli", auth.authenticate(ACC, "sigortaci", PW["sigortaci"].lower(), LoginState(), T0).code == "invalid")
 check("parola başka hesaba ait", auth.authenticate(ACC, "musteri1", PW["musteri2"], LoginState(), T0).code == "invalid")
@@ -131,9 +137,10 @@ check("gelecekteki zaman damgası şüpheli: bitmiş", auth.session_expired(T0 +
 check("özel zaman aşımı", auth.session_expired(T0, T0 + 61, timeout=60) and not auth.session_expired(T0, T0 + 59, timeout=60))
 
 # --- yetkilendirme
-ins = Principal("sigortaci", Role.INSURER, "S")
+ins = Principal("sigortaci", Role.INSURER, "S", company="boztepe", title="Yönetici")
 cus = Principal("musteri1", Role.CUSTOMER, "M", customer_rank=1)
-all_perms = {auth.PERM_PORTAL_ANY, auth.PERM_INSURANCE, auth.PERM_EVIDENCE, auth.PERM_CALIBRATION, auth.PERM_OVERVIEW, auth.PERM_SECTORS}
+all_perms = {auth.PERM_PORTAL_ANY, auth.PERM_INSURANCE, auth.PERM_EVIDENCE, auth.PERM_CALIBRATION, auth.PERM_OVERVIEW, auth.PERM_SECTORS,
+             auth.PERM_DECIDE, auth.PERM_ADMIN}
 check("sigortacı tüm iç izinlere sahip", all(auth.allowed(ins, p) for p in all_perms))
 check("sigortacı müşteri görünümünü önizleyebilir", auth.allowed(ins, auth.PERM_PORTAL_ANY))
 check("müşteri yalnızca kendi portalını görür", auth.permissions_for(cus) == frozenset({auth.PERM_PORTAL_OWN}))
@@ -157,9 +164,10 @@ try:
 except PermissionError:
     check("izinli require sessiz geçer", False)
 check("bilinmeyen izin hiçbir role verilmez", not auth.allowed(ins, "yok.izin") and not auth.allowed(cus, "yok.izin"))
-check("sekmeler: sigortacı beş, müşteri/oturumsuz sıfır", auth.tabs_for(ins) == auth.INSURER_TABS and len(auth.INSURER_TABS) == 5 and auth.tabs_for(cus) == () and auth.tabs_for(None) == ())
-check("sektör sekmeleri tek 'DİĞER SEKTÖRLER' altında", auth.INSURER_TABS[-1] == "DİĞER SEKTÖRLER" and not {"TARIM", "BELEDİYE", "KURTARMA"} & set(auth.INSURER_TABS))
-check("müşteri portalı sekmesi sigortacıda var", "MÜŞTERİ PORTALI" in auth.INSURER_TABS)
+check("sekmeler: sigortacı altı, müşteri/oturumsuz sıfır", auth.tabs_for(ins) == auth.INSURER_TABS and len(auth.INSURER_TABS) == 6 and auth.tabs_for(cus) == () and auth.tabs_for(None) == ())
+check("sektör sekmeleri tek 'DİĞER SEKTÖRLER' altında", "DİĞER SEKTÖRLER" in auth.INSURER_TABS and not {"TARIM", "BELEDİYE", "KURTARMA"} & set(auth.INSURER_TABS))
+check("müşteri dosyaları ve yönetim sekmeleri var, yönetim sonda", "MÜŞTERİ DOSYALARI" in auth.INSURER_TABS and auth.INSURER_TABS[-1] == "YÖNETİM" and "MÜŞTERİ PORTALI" not in auth.INSURER_TABS)
+check("karar verme ve yönetim izinleri müşteride yok", not auth.allowed(cus, auth.PERM_DECIDE) and not auth.allowed(cus, auth.PERM_ADMIN))
 
 # --- oturum serileştirme
 check("oturum gidiş-dönüş (sigortacı)", Principal.from_session(ins.to_session()) == ins)
@@ -177,6 +185,12 @@ bad_sessions = {
     "sıra negatif": {"username": "a", "role": "musteri", "customer_rank": -1},
     "sıra bool": {"username": "a", "role": "musteri", "customer_rank": True},
     "sıra metin": {"username": "a", "role": "musteri", "customer_rank": "1"},
+    "sigortacıda şirket yok": {"username": "a", "role": "sigortaci"},
+    "sigortacıda bilinmeyen şirket": {"username": "a", "role": "sigortaci", "company": "yok"},
+    "sigortacıda şirket metin değil": {"username": "a", "role": "sigortaci", "company": ["boztepe"]},
+    "müşteride şirket": {"username": "a", "role": "musteri", "customer_rank": 1, "company": "boztepe"},
+    "unvan metin değil": {"username": "a", "role": "sigortaci", "company": "boztepe", "title": 5},
+    "unvan çok uzun": {"username": "a", "role": "sigortaci", "company": "boztepe", "title": "x" * (auth.MAX_TITLE + 1)},
 }
 for label, data in bad_sessions.items():
     check(f"bozuk oturum reddedilir: {label}", Principal.from_session(data) is None)
@@ -187,9 +201,13 @@ def entry(user, role, pw, **extra):
     return {"username": user, "role": role, "display_name": user.title(), "salt": salt, "hash": digest, **extra}
 
 
-good = json.dumps([entry("Ayse.Demir", "musteri", "Gizli-Parola-1", customer_name="A. Demir"), entry("uzman", "sigortaci", "Baska-Parola-2")])
+good = json.dumps([entry("Ayse.Demir", "musteri", "Gizli-Parola-1", customer_name="A. Demir"), entry("uzman", "sigortaci", "Baska-Parola-2"),
+                   entry("yay", "sigortaci", "Baska-Parola-3", company="yaylacik", title=" Müdür ")])
 real = auth.parse_accounts(good)
-check("JSON: iki hesap, kullanıcı adı normalleşir", [a.username for a in real] == ["ayse.demir", "uzman"] and real[0].customer_name == "A. Demir" and real[0].customer_rank is None)
+check("JSON: üç hesap, kullanıcı adı normalleşir", [a.username for a in real] == ["ayse.demir", "uzman", "yay"] and real[0].customer_name == "A. Demir" and real[0].customer_rank is None)
+check("JSON: şirket verilmeyen sigortacı varsayılan (tek) şirkete kısıtlanır", real[1].company == tenancy.DEFAULT_COMPANY and real[1].title == "")
+check("JSON: şirket ve unvan okunur (unvan kırpılır)", real[2].company == "yaylacik" and real[2].title == "Müdür" and real[0].company is None)
+check("JSON: girişte şirket ve unvan oturuma taşınır", auth.authenticate(real, "yay", "Baska-Parola-3", LoginState(), T0).principal.company == "yaylacik")
 check("JSON hesabıyla giriş", auth.authenticate(real, "AYSE.demir", "Gizli-Parola-1", LoginState(), T0).code == "ok"
       and auth.authenticate(real, "AYSE.demir", "Gizli-Parola-2", LoginState(), T0).code == "invalid")
 check("JSON hesapları varken demo parolası geçmez", auth.authenticate(real, "sigortaci", PW["sigortaci"], LoginState(), T0).code == "invalid")
@@ -211,6 +229,11 @@ bad_json = {
     "müşteri adı boş": json.dumps([entry("a", "musteri", "p", customer_name="  ")]),
     "sigortacıda müşteri adı": json.dumps([entry("a", "sigortaci", "p", customer_name="X")]),
     "çok uzun kullanıcı adı": json.dumps([entry("a" * 65, "sigortaci", "p")]),
+    "bilinmeyen şirket": json.dumps([entry("a", "sigortaci", "p", company="yok")]),
+    "şirket metin değil": json.dumps([entry("a", "sigortaci", "p", company=3)]),
+    "müşteride şirket": json.dumps([entry("a", "musteri", "p", customer_name="X", company="boztepe")]),
+    "unvan metin değil": json.dumps([entry("a", "sigortaci", "p", title=["x"])]),
+    "unvan çok uzun": json.dumps([entry("a", "sigortaci", "p", title="x" * 81)]),
 }
 for label, text in bad_json.items():
     try:
@@ -227,13 +250,20 @@ check("hesap kaydı: düz parola yok, tur sayısı varsayılan", "Uzun-Parola-12
 check("hesap kaydı: müşteri adı kırpılır, sigortacıda yok", e_cus["customer_name"] == "A. Yılmaz" and "customer_name" not in e_ins)
 made = auth.parse_accounts(json.dumps([e_ins, e_cus]))
 check("hesap kaydı: üretilen JSON ayrıştırılır", [a.username for a in made] == ["sirket", "ayse"] and made[1].customer_name == "A. Yılmaz")
+check("hesap kaydı: sigortacıda varsayılan şirket, unvan yok", e_ins["company"] == tenancy.DEFAULT_COMPANY and "title" not in e_ins and "company" not in e_cus)
+e_ins2 = auth.account_entry("u2", auth.Role.INSURER, "U", "Parola-xx-12", company="camliova", title=" Uzman ")
+check("hesap kaydı: şirket ve unvan yazılır", e_ins2["company"] == "camliova" and e_ins2["title"] == "Uzman"
+      and auth.parse_accounts(json.dumps([e_ins2]))[0].company == "camliova")
 check("hesap kaydı: parola ile giriş çalışır", auth.authenticate(made, "SIRKET", "Uzun-Parola-12!", LoginState(), T0).code == "ok"
       and auth.authenticate(made, "ayse", "Baska-Parola-34!", LoginState(), T0).principal.customer_name == "A. Yılmaz")
 check("hesap kaydı: yanlış parola geçmez", auth.authenticate(made, "ayse", "Uzun-Parola-12!", LoginState(), T0).code == "invalid")
 check("hesap kaydı: her çağrıda farklı tuz", auth.account_entry("a", auth.Role.INSURER, "", "x")["salt"] != auth.account_entry("a", auth.Role.INSURER, "", "x")["salt"])
 for label, args in {"boş kullanıcı adı": ("", auth.Role.INSURER, "x", "p", None), "boş parola": ("a", auth.Role.INSURER, "x", "", None),
                     "çok uzun parola": ("a", auth.Role.INSURER, "x", "p" * 257, None), "müşteri adı yok": ("a", auth.Role.CUSTOMER, "x", "p", None),
-                    "müşteri adı boşluk": ("a", auth.Role.CUSTOMER, "x", "p", "  "), "sigortacıda müşteri adı": ("a", auth.Role.INSURER, "x", "p", "X")}.items():
+                    "müşteri adı boşluk": ("a", auth.Role.CUSTOMER, "x", "p", "  "), "sigortacıda müşteri adı": ("a", auth.Role.INSURER, "x", "p", "X"),
+                    "bilinmeyen şirket": ("a", auth.Role.INSURER, "x", "p", None, "yok"),
+                    "müşteride şirket": ("a", auth.Role.CUSTOMER, "x", "p", "X", "boztepe"),
+                    "çok uzun unvan": ("a", auth.Role.INSURER, "x", "p", None, None, "x" * 81)}.items():
     try:
         auth.account_entry(*args)
         check(f"hesap kaydı reddedilir: {label}", False)

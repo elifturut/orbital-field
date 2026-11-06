@@ -7,20 +7,43 @@ Geliştirici: Elif Turut
 
 ## Demo girişleri
 
-| Kullanıcı | Parola | Gördükleri |
-|---|---|---|
-| `sigortaci` | `Sigortaci-Demo-2026` | Tüm sekmeler, müşteri portalı önizlemesi |
-| `musteri1` · `musteri2` · `musteri3` | `Musteri1-Demo-2026` · `Musteri2-Demo-2026` · `Musteri3-Demo-2026` | Yalnızca kendi poliçe, parsel ve verimlilik takibi |
+| Kullanıcı | Parola | Şirket / unvan | Gördükleri |
+|---|---|---|---|
+| `sigortaci` | `Sigortaci-Demo-2026` | Boztepe Sigorta (demo) · Hasar yöneticisi | Altı sekme; yalnızca Boztepe poliçeleri |
+| `sigortaci2` | `Sigortaci2-Demo-2026` | Yaylacık Sigorta (demo) · Ekspertiz uzmanı | Altı sekme; yalnızca Yaylacık poliçeleri |
+| `musteri1` · `musteri2` · `musteri3` | `Musteri1-Demo-2026` · `Musteri2-Demo-2026` · `Musteri3-Demo-2026` | — | Tüm şirketlerdeki kendi poliçeleri, parselleri ve verimlilik takibi |
+
+Şirket adları **kurgusaldır** ("(demo)" eki bunu belirtir); gerçek bir kurumla ilgisi yoktur. Poliçelerin şirketlere dağılımı sentetiktir.
 
 ## Ekranlar
 
-- **Karşılama sayfası (giriş yapmadan):** biz neyiz, amaç, dört hizmet alanı, nasıl çalışır, neler sunuyoruz, güncel durum (prototip, sentetik veri)
-  ve "Hizmet alın" bölümü; sağ üstteki **Giriş yap** düğmesi giriş formunu açar, formda **← Ana sayfa** ile geri dönülür.
-  Sayfa hesap ya da veri içermez.
-- **Sigortacı:** beş ana sekme — Genel Bakış · Sigorta · Müşteri Portalı · Kalibrasyon · Diğer Sektörler (Tarım, Belediye, Kurtarma alt sekmelerde).
-  Karar kuralları (eşikler, muafiyet, teminat) sol menüdedir; Sigorta, Müşteri Portalı önizlemesi ve Kalibrasyon aynı kuralları kullanır.
-  Senaryo tohumu sol menüde "Gelişmiş" altındadır.
-- **Müşteri:** tek sayfa, dört sekme — Özet (harita ve poliçe tablosu) · Hasar durumum · Verimlilik · Belgeler.
+- **Web sitesi (giriş yapmadan):** üstte menü çubuğu — Ana Sayfa · Hakkımızda · Hizmetlerimiz · Nasıl çalışır · İletişim · **Giriş yap**.
+  Ana sayfa siyah zeminli, ince ve büyük yazılı bir ajans tarzındadır: kademeli dev başlık ve yalnızca CSS ile çizilen cam şekiller (görsel dosya yok),
+  hakkında + ürün kapsamı sayıları (4 alan, 3 uydu indeksi, 4 karar türü; müşteri ya da kullanım sayısı değildir), numaralı hizmet ızgarası, adımlar ve çağrı bölümü.
+  Hizmetlerimiz dört alanı ayrı ayrı ve hangi aşamada olduklarıyla anlatır; Nasıl çalışır akış çizgisi, beş adım ve sık sorulan soruları içerir.
+  Sayfalar adres çubuğundan da açılır (`?sayfa=hakkimizda`, `hizmetler`, `nasil`, `iletisim`). Site hesap ya da veri içermez; durumunu
+  (prototip, sentetik veri) açıkça yazar. Yapılmamış iş, rakam, müşteri ya da referans iddiası yoktur.
+- **Sigortacı** (kendi şirketinin poliçeleri) — altı sekme:
+  1. **Genel Bakış**
+  2. **Sigorta:** karar tablosu, harita, kanıt belgesi. Otomatik öneri ile geçerli karar ayrı gösterilir.
+  3. **Müşteri Dosyaları:** istediği müşteriyi açar; *Dosya* (poliçeler, harita, iç değerlendirme, kanıt belgesi) · *Karar ver* (onay, kısmi onay,
+     ekspertiz, ret; müşteriye görünecek not ve zorunlu iç gerekçe; otomatik karara dönme) · *Müşterinin gördüğü* · *Geçmiş*.
+  4. **Kalibrasyon**
+  5. **Diğer Sektörler** (Tarım, Belediye, Kurtarma)
+  6. **Yönetim:** *Profil* (ad, unvan, şirket, yetkiler) · *Şirket* (özet ve karar bekleyen dosyalar) · *Ekip* · *Karar kaydı* (CSV indirme) · *Sistem*.
+  Karar kuralları (eşikler, muafiyet, teminat) sol menüdedir. Senaryo tohumu "Gelişmiş" altındadır; karar yalnızca varsayılan tohumda verilir.
+- **Müşteri:** tek sayfa, dört sekme — Özet · Hasar durumum · Verimlilik · Belgeler. Poliçeler farklı şirketlerde olabilir; her biri şirket adıyla
+  görünür. Şirketin kararı, tutarı ve müşteriye yazdığı not görünür; iç gerekçe ve kararı veren kullanıcı **hiçbir yerde** görünmez.
+
+### Çok şirketli model ve kararlar
+
+- Şirket bilgisi müşteriye değil **poliçeye** bağlıdır (`sirket` sütunu). Sigortacı yalnızca kendi şirketinin poliçelerini görür ve karar verir;
+  başka şirketin poliçesine yazma denemesi reddedilir. Şirket, kullanıcı ve zaman damgası sunucuda oturumdan alınır.
+- Otomatik motor bir **öneri** üretir; sigortacı kararı bunun üzerine yazılır ve ayrıca saklanır. Tutar aynı formülle hesaplanır
+  (bedel × teminat × hasar oranı − muafiyet); elle tutar yalnızca onay ve kısmi onayda, 0 ile sigorta bedeli arasında girilebilir.
+- Karar defteri **eklemelidir** (SQLite): kararı değiştirmek ya da geri almak eskisini silmez, yeni kayıt ekler. Geri alma için gerekçe zorunludur.
+- Karar defteri dosyası varsayılan olarak `orbital_data/orbital.sqlite3`'tür; `ORBITAL_DB_PATH` ile başka yol verilebilir.
+  **Streamlit Community Cloud'da dosya sistemi geçicidir:** uygulama yeniden başlayınca kayıtlar silinir. Gerçek kullanım için kalıcı bir veritabanı gerekir.
 
 ## Bilgisayarında çalıştırma
 
@@ -80,11 +103,19 @@ Adres geçersizse ya da boşsa düğme çizilmez ve "iletişim adresi yakında y
 | `basemaps.py` | Canlı uydu harita altlıkları |
 | `calibration.py` | Geriye dönük test ve eşik kalibrasyonu |
 | `reports.py` | Karar kanıt paketi |
-| `auth.py`, `portal.py` | Giriş, roller, müşteri portalı |
-| `landing.py` | Giriş öncesi karşılama sayfasının içeriği |
+| `auth.py`, `portal.py` | Giriş, roller (sigortacı şirketi ve unvanı dahil), müşteri portalı |
+| `tenancy.py` | Kurgusal demo şirketleri ve poliçe → şirket eşlemesi |
+| `casework.py` | Sigortacı kararı: doğrulama, tutar, otomatik öneriyle birleştirme |
+| `store.py` | Eklemeli karar defteri (SQLite) |
+| `landing.py` | Giriş öncesi web sitesinin içeriği ve menüsü |
+| `orbital_data/` | Çalışırken oluşur (karar defteri); depoya yüklemeyin (`.gitignore` içinde) |
 | `test_*.py` | Otomatik kontroller (`python test_auth.py` gibi) |
 
 ## Sınırlar
 
-- Gerçek Streamlit oturum davranışı ve canlı veri uç noktaları geliştirme ortamında denenmedi.
-- Giriş demo düzeyindedir: SSO, iki adımlı doğrulama ve istek hızı sınırı yoktur.
+- Gerçek Streamlit oturum davranışı, harita/Plotly çizimi ve canlı veri uç noktaları geliştirme ortamında denenmedi; arayüz sahte (stub) bir
+  Streamlit ile ve önizleme görüntüleriyle sınandı. Menü çubuğu, beyaz/çerçeveli hap düğmeler ve cam şekiller `st-key-…` seçicilerine ve `backdrop-filter`/`mask-composite` desteğine dayanır; gerçek Streamlit'te ve hedef tarayıcılarda ilk yayında gözle kontrol edilmelidir.
+- Giriş demo düzeyindedir: SSO, iki adımlı doğrulama, parola değiştirme, istek hızı sınırı ve bağımsız güvenlik denetimi yoktur.
+- Şirketler ve poliçe dağılımı sentetiktir. Şirket bazlı kural yayını, bildirimler ve kullanıcı ekleme/çıkarma ekranı yoktur (ekip, yapılandırmadan okunur).
+- Kanıt belgelerindeki bağlam çiziminde komşu parsellerin hasar renkleri başka şirketlerinki olabilir (yalnızca renk; poliçe ya da kişi bilgisi değil).
+- Uygulama kendi parsel dosyanızı yüklemeyi henüz desteklemez.

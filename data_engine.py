@@ -39,6 +39,8 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+import tenancy
+
 # --------------------------------------------------------------------------- #
 # Sabitler ve tip takma adları
 # --------------------------------------------------------------------------- #
@@ -291,33 +293,45 @@ class ParcelGrid:
         )
 
 
-def parcels_to_geojson(geometry: ParcelGeometry, props: pd.DataFrame) -> dict:
+def parcels_to_geojson(geometry: ParcelGeometry, props: pd.DataFrame,
+                      positions: Optional[Sequence[int]] = None) -> dict:
     """Parsel çokgenlerini öznitelik tablosuyla birlikte GeoJSON'a çevirir.
 
     Args:
         geometry: ``ParcelGrid.build`` çıktısı.
-        props: ``geometry.count`` satırlı öznitelik tablosu (sıra geometriyle aynı).
+        props: Öznitelik tablosu. ``positions`` verilmezse ``geometry.count`` satırlı ve geometriyle aynı sırada
+            olmalıdır.
+        positions: ``props`` satırlarının geometri konumları (aynı sırada, tekrarsız, ``0 <= konum < geometry.count``).
+            Altküme çizmek için kullanılır; verilmezse tüm parseller sırayla çizilir.
 
     Returns:
         GeoJSON ``FeatureCollection`` sözlüğü (koordinatlar ``[boylam, enlem]``).
 
     Raises:
-        ValueError: Öznitelik satır sayısı parsel sayısına eşit değilse.
+        ValueError: Satır sayısı uyuşmuyorsa ya da konumlar geçersiz/yinelenen ise.
     """
-    if len(props) != geometry.count:
-        raise ValueError("Öznitelik tablosu satır sayısı parsel sayısıyla uyuşmuyor.")
+    if positions is None:
+        if len(props) != geometry.count:
+            raise ValueError("Öznitelik tablosu satır sayısı parsel sayısıyla uyuşmuyor.")
+        pos_list = list(range(geometry.count))
+    else:
+        pos_list = [int(p) for p in positions]
+        if len(pos_list) != len(props):
+            raise ValueError("Konum sayısı öznitelik satır sayısıyla uyuşmuyor.")
+        if len(set(pos_list)) != len(pos_list) or any(p < 0 or p >= geometry.count for p in pos_list):
+            raise ValueError("Konumlar yinelenen ya da aralık dışı.")
     records = json.loads(props.to_json(orient="records", force_ascii=False))
     features: List[dict] = []
-    for i, rec in enumerate(records):
+    for pos, rec in zip(pos_list, records):
         ring = [
             [float(lo), float(la)]
-            for la, lo in zip(geometry.corners_lat[i], geometry.corners_lon[i])
+            for la, lo in zip(geometry.corners_lat[pos], geometry.corners_lon[pos])
         ]
         ring.append(ring[0])
         features.append(
             {
                 "type": "Feature",
-                "id": i,
+                "id": pos,
                 "properties": rec,
                 "geometry": {"type": "Polygon", "coordinates": [ring]},
             }
@@ -391,6 +405,42 @@ class ClaimRules:
     advance_pct: float = 70.0
 
 
+#: dNBR bu değerde hasar oranı %100 sayılır (USGS "yüksek şiddet" üst sınırına yakın).
+FULL_DAMAGE_DNBR: float = 0.66
+
+
+def damage_ratio(dnbr: np.ndarray, rules: ClaimRules) -> np.ndarray:
+    """dNBR'den 0–1 aralığında hasar oranı (ret eşiğinde 0, :data:`FULL_DAMAGE_DNBR`'de 1).
+
+    Args:
+        dnbr: dNBR değerleri.
+        rules: Karar kuralları (ret eşiği alt sınırdır).
+
+    Returns:
+        Aynı uzunlukta hasar oranı dizisi.
+    """
+    span = max(FULL_DAMAGE_DNBR - rules.review_dnbr, 1e-6)
+    return np.clip((np.asarray(dnbr, dtype=float) - rules.review_dnbr) / span, 0.0, 1.0)
+
+
+def net_claim_tl(dnbr: np.ndarray, insured_tl: np.ndarray, rules: ClaimRules) -> np.ndarray:
+    """Muafiyet düşülmüş hesaplanan tazminat (TL): ``bedel × teminat × hasar oranı − bedel × muafiyet`` (en az 0).
+
+    Hem otomatik karar motoru hem de sigortacının elle verdiği karar tutarları bu tek formülü kullanır.
+
+    Args:
+        dnbr: dNBR değerleri.
+        insured_tl: Sigorta bedelleri (TL).
+        rules: Karar kuralları.
+
+    Returns:
+        Aynı uzunlukta tutar dizisi.
+    """
+    insured = np.asarray(insured_tl, dtype=float)
+    gross = insured * (rules.coverage_pct / 100.0) * damage_ratio(dnbr, rules)
+    return np.clip(gross - insured * (rules.deductible_pct / 100.0), 0.0, None)
+
+
 @dataclass
 class InsuranceDataset:
     """Sigorta sekmesi için üretilmiş veri paketi.
@@ -409,16 +459,18 @@ class InsuranceDataset:
     event_label: str
     event_date: dt.date
 
-    def geojson(self, frame: Optional[pd.DataFrame] = None) -> dict:
+    def geojson(self, frame: Optional[pd.DataFrame] = None, positions: Optional[Sequence[int]] = None) -> dict:
         """Parsel çokgenlerini GeoJSON olarak üretir.
 
         Args:
             frame: Öznitelik tablosu (varsayılan: ``self.parcels``); örn. karar sütunlu tablo.
+            positions: ``frame`` satırlarının geometri konumları (aynı sırada). Verilmezse ``frame`` tüm parselleri
+                geometriyle aynı sırada içermelidir. Bir şirketin poliçeleri gibi altküme çizmek için kullanılır.
 
         Returns:
             GeoJSON ``FeatureCollection``.
         """
-        return parcels_to_geojson(self.geometry, self.parcels if frame is None else frame)
+        return parcels_to_geojson(self.geometry, self.parcels if frame is None else frame, positions)
 
 
 class InsuranceSimulator:
@@ -499,10 +551,12 @@ class InsuranceSimulator:
         )
         sev_idx = classify_dnbr(dnbr)
 
+        police_nos = [f"POL-2026-{10_000 + i * 7:05d}" for i in range(n)]
         frame = pd.DataFrame(
             {
                 "parsel_id": [f"P-{i + 1:03d}" for i in range(n)],
-                "police_no": [f"POL-2026-{10_000 + i * 7:05d}" for i in range(n)],
+                "police_no": police_nos,
+                "sirket": tenancy.assign_companies(police_nos),
                 "sigortali": holder,
                 "varlik_turu": asset,
                 "alan_ha": geo.area_ha.round(2),
@@ -593,11 +647,9 @@ class InsuranceSimulator:
             ],
             default="Sınır hasar — eksper incelemesi",
         )
-        span = max(0.66 - rules.review_dnbr, 1e-6)
-        ratio = np.clip((dnbr - rules.review_dnbr) / span, 0.0, 1.0)
+        ratio = damage_ratio(dnbr, rules)
         insured = df["sigorta_bedeli_tl"].to_numpy(dtype=float)
-        gross = insured * (rules.coverage_pct / 100.0) * ratio
-        net = np.clip(gross - insured * (rules.deductible_pct / 100.0), 0.0, None)
+        net = net_claim_tl(dnbr, insured, rules)
         paid = np.select(
             [decision == "ONAY", decision == "KISMİ ONAY"],
             [net, net * (rules.advance_pct / 100.0)],

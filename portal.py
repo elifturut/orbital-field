@@ -25,6 +25,7 @@ import pandas as pd
 
 import data_engine as de
 import reports as rep
+import tenancy
 from auth import Principal, Role
 from data_engine import ClaimRules, format_tr
 
@@ -37,13 +38,13 @@ __all__ = [
 
 #: Müşteri tablosuna girebilen sütunlar (beyaz liste).
 CUSTOMER_COLUMNS: Tuple[str, ...] = (
-    "police_no", "parsel_id", "varlik_turu", "alan_ha", "sigorta_bedeli_tl", "police_aktif", "siddet", "karar",
-    "hasar_yuzdesi", "odenecek_tl", "bekleyen_tl", "enlem", "boylam",
+    "police_no", "parsel_id", "sirket_adi", "varlik_turu", "alan_ha", "sigorta_bedeli_tl", "police_aktif", "siddet",
+    "karar", "karar_kaynagi", "musteri_notu", "hasar_yuzdesi", "odenecek_tl", "bekleyen_tl", "enlem", "boylam",
 )
 #: Müşteriye ASLA gitmeyen sütunlar (testler bunların sızmadığını doğrular).
 INTERNAL_COLUMNS: Tuple[str, ...] = (
     "sigortali", "risk_skoru", "risk_sinifi", "guven", "dnbr", "nbr_once", "nbr_sonra", "ndvi_once", "ndvi_sonra",
-    "siddet_no", "gerekce",
+    "siddet_no", "gerekce", "sirket", "otomatik_karar", "otomatik_odenecek_tl",
 )
 #: Verimlilik tablosuna girebilen sütunlar (beyaz liste); ham ölçüm, risk ve eşik içermez.
 PRODUCTIVITY_COLUMNS: Tuple[str, ...] = (
@@ -68,16 +69,23 @@ REASON_TEXT: Dict[str, str] = {
     "partial": "Parselinizde orta düzeyde hasar saptandı. Avans ödenir; kalan tutar ekspertiz sonrası belirlenir.",
     "low_confidence": "Uydu görüntüsü bulut ya da gölge nedeniyle yeterince net değil; yerinde inceleme gerekir.",
     "borderline": "Hasar saptandı ancak otomatik onay için yeterince net değil; ekspertiz incelemesi gerekir.",
+    "insurer": "Dosyanız sigorta şirketinizin yetkilisi tarafından incelenmiş ve karara bağlanmıştır.",
 }
 #: Rol görünürlük tablosu: (bilgi, müşteri görür mü, sigortacı görür mü).
 VISIBILITY: Tuple[Tuple[str, bool, bool], ...] = (
     ("Kendi poliçeleri ve parselleri", True, True),
+    ("Müşterinin başka şirketlerdeki poliçeleri", True, False),
+    ("Sigorta şirketinin müşteri notu", True, True),
+    ("Sigortacının iç gerekçesi ve karar kaydı", False, True),
     ("Karar, ödenecek ve bekleyen tutar", True, True),
+    ("Kararı otomatik motorun mu sigortacının mı verdiği", True, True),
     ("Sade dille gerekçe ve takip adımları", True, True),
     ("Kendi parselinin uydu haritası", True, True),
     ("Kendi parsellerinin bitki gelişimi ve tahmini verim (beklenene oranla)", True, True),
     ("Karar bildirimi (kendi poliçesi)", True, True),
-    ("Diğer müşterilerin poliçe ve kararları", False, True),
+    ("Diğer müşterilerin poliçe ve kararları", False, False),
+    ("Aynı şirketteki diğer müşterilerin poliçe ve kararları", False, True),
+    ("Başka şirketlerin poliçe ve kararları", False, False),
     ("Poliçe risk skoru ve risk sınıfı", False, True),
     ("Ham uydu ölçümleri (dNBR, NBR, NDVI, gözlem güveni)", False, True),
     ("Karar eşikleri ve kural paneli", False, True),
@@ -200,27 +208,40 @@ def resolve_customer(claims: pd.DataFrame, principal: Principal) -> Optional[str
 # --------------------------------------------------------------------------- #
 # Görünüm
 # --------------------------------------------------------------------------- #
-def build_view(claims: pd.DataFrame, name: str, rules: ClaimRules) -> CustomerView:
+def build_view(claims: pd.DataFrame, name: str, rules: ClaimRules, company: Optional[str] = None) -> CustomerView:
     """Müşterinin görebileceği tabloyu kurar (satır ve sütun süzmesi burada yapılır).
 
     Args:
         claims: Karar tablosu (tüm müşteriler; geometriyle aynı sıra).
         name: Müşteri adı; ``sigortali`` ile birebir eşleşen satırlar alınır.
         rules: Kararı üreten kurallar (neden kodu için).
+        company: Verilirse yalnızca bu şirketin poliçeleri alınır (sigortacı önizlemesi: sigortacı, müşterinin başka
+            şirketlerdeki poliçelerini görmez). ``None`` ise müşterinin TÜM şirketlerdeki poliçeleri (müşteri oturumu).
 
     Returns:
         ``CustomerView``.
 
     Raises:
-        KeyError: Bu ada ait poliçe yoksa.
-        ValueError: Kural izi ya da tutar motor çıktısıyla uyuşmazsa.
+        KeyError: Bu ada (ve şirkete) ait poliçe yoksa.
+        ValueError: Otomatik kararın kural izi ya da tutarı motor çıktısıyla uyuşmazsa.
     """
-    positions = np.flatnonzero((claims["sigortali"] == name).to_numpy())
+    mask = (claims["sigortali"] == name).to_numpy()
+    if company is not None:
+        mask = mask & (claims["sirket"] == company).to_numpy()
+    positions = np.flatnonzero(mask)
     if positions.size == 0:
         raise KeyError(f"Bu müşteriye ait poliçe yok: {name}")
-    own = claims.iloc[positions]
+    own = claims.iloc[positions].copy()
+    if "karar_kaynagi" not in own:
+        own["karar_kaynagi"] = "Otomatik"
+    if "musteri_notu" not in own:
+        own["musteri_notu"] = ""
+    own["sirket_adi"] = [tenancy.company_name(c) for c in own["sirket"]] if "sirket" in own else "—"
     reasons: List[str] = []
     for _, row in own.iterrows():
+        if row["karar_kaynagi"] != "Otomatik":
+            reasons.append("insurer")          # sigortacı kararı kural izine uymak zorunda değildir; motorla doğrulanmaz
+            continue
         trace, _ = rep.verify(row, rules)
         reasons.append(trace.reason_key)
     frame = own[list(CUSTOMER_COLUMNS)].reset_index(drop=True)
@@ -316,7 +337,8 @@ def productivity_text(row: pd.Series) -> str:
     return " ".join(parts)
 
 
-def steps_for(decision: str, event_date: dt.date, paid: float, pending: float, advance_pct: float) -> Tuple[Step, ...]:
+def steps_for(decision: str, event_date: dt.date, paid: float, pending: float, advance_pct: float,
+              insurer: bool = False) -> Tuple[Step, ...]:
     """Kararın durumundan hasar takip adımlarını türetir (gerçek ödeme/ekspertiz kaydı değildir).
 
     Args:
@@ -325,6 +347,7 @@ def steps_for(decision: str, event_date: dt.date, paid: float, pending: float, a
         paid: Ödenecek tutar (TL).
         pending: Bekleyen tutar (TL).
         advance_pct: Kısmi onayda avans oranı (%).
+        insurer: ``True`` ise karar sigortacı tarafından verilmiştir (avans oranı otomatik kuraldan gelmez, anlatılmaz).
 
     Returns:
         Adımlar.
@@ -335,13 +358,14 @@ def steps_for(decision: str, event_date: dt.date, paid: float, pending: float, a
     head = (
         Step("Olay kaydedildi", f"Olay sonrası uydu görüntüsü: {event_date:%d.%m.%Y}", STEP_DONE),
         Step("Uydu analizi tamamlandı", "Parselinizdeki hasar ölçüldü", STEP_DONE),
-        Step("Karar verildi", HEADLINES[decision], STEP_DONE),
+        Step("Karar verildi", HEADLINES[decision] + (" · sigorta şirketi kararı" if insurer else ""), STEP_DONE),
     )
+    advance_text = (f"{_tl(paid)} avans" if insurer else f"{_tl(paid)} (hesaplanan tutarın %{format_tr(advance_pct, 0)}'i)")
     cap = f" (en çok {_tl(pending)})" if pending >= 0.5 else ""      # tutar 0'a yuvarlanıyorsa "en çok ₺0" demeyiz
     tail = {
         "ONAY": (Step("Ödeme", f"{_tl(paid)} ödeme sürecine alınır", STEP_CURRENT),),
         "KISMİ ONAY": (
-            Step("Avans ödemesi", f"{_tl(paid)} (hesaplanan tutarın %{format_tr(advance_pct, 0)}'i)", STEP_CURRENT),
+            Step("Avans ödemesi", advance_text, STEP_CURRENT),
             Step("Ekspertiz ve kalan ödeme", f"Kalan tutar ekspertiz sonrası belirlenir{cap}", STEP_WAITING)),
         "EKSPERTİZ": (
             Step("Ekspertiz", "Yerinde inceleme için eksper görevlendirilir", STEP_CURRENT),
@@ -377,6 +401,7 @@ def own_geojson(geometry: de.ParcelGeometry, view: CustomerView, colors: Sequenc
             "type": "Feature", "id": int(pos),
             "properties": {
                 "police_no": str(row["police_no"]), "varlik_turu": str(row["varlik_turu"]),
+                "sirket": str(row["sirket_adi"]),
                 "alan_txt": f'{format_tr(float(row["alan_ha"]), 2)} ha', "bedel_txt": _tl(row["sigorta_bedeli_tl"]),
                 "siddet": str(row["siddet"]), "durum": str(row["durum"]), "odeme_txt": _tl(row["odenecek_tl"]),
                 "bekleyen_txt": _tl(row["bekleyen_tl"]), "renk": str(colors[severity]),
@@ -470,23 +495,38 @@ def build_notice_html(row: Mapping[str, Any], owner: str, rules: ClaimRules, eve
         raise ValueError(f"Satırda alan(lar) eksik: {', '.join(missing)}")
     if str(row["sigortali"]) != str(owner):
         raise PermissionError("Bu poliçe istenen müşteriye ait değil.")
-    trace, pay = rep.verify(row, rules)     # tam satır gerekir: karar, ölçümlerden bağımsız yeniden hesaplanır
     decision = str(row["karar"])
+    by_insurer = str(row.get("karar_kaynagi", "Otomatik")) != "Otomatik"
+    if by_insurer:
+        reason_key, pay = "insurer", None           # sigortacı kararı kural izine bağlı değildir; tutarı sigortacı belirler
+    else:
+        trace, pay = rep.verify(row, rules)         # tam satır gerekir: karar, ölçümlerden bağımsız yeniden hesaplanır
+        reason_key = trace.reason_key
+    company = tenancy.company_name(row.get("sirket"))
+    note_text = str(row.get("musteri_notu", "") or "") if by_insurer else ""
     colour = rep.BADGE_COLORS[decision]
-    steps = steps_for(decision, event_date, float(row["odenecek_tl"]), float(row["bekleyen_tl"]), pay.advance_pct)
+    steps = steps_for(decision, event_date, float(row["odenecek_tl"]), float(row["bekleyen_tl"]),
+                      rules.advance_pct if pay is None else pay.advance_pct, insurer=by_insurer)
     marks = {STEP_DONE: "✓", STEP_CURRENT: "●", STEP_WAITING: "○", STEP_CLOSED: "■"}
     step_html = "".join(
         f'<li class="{s.state}"><span class="dot">{marks[s.state]}</span><div><b>{_e(s.label)}</b>'
         f'<span class="d">{_e(s.detail)}</span></div></li>' for s in steps)
     policy_rows = "".join(f'<tr><td>{_e(a)}</td><td class="num">{_e(b)}</td></tr>' for a, b in [
         ("Poliçe no", row["police_no"]), ("Parsel", row["parsel_id"]), ("Sigortalı", row["sigortali"]),
-        ("Müşteri no", customer_no(str(row["sigortali"]))), ("Varlık türü", row["varlik_turu"]),
+        ("Müşteri no", customer_no(str(row["sigortali"]))), ("Sigorta şirketi", company),
+        ("Varlık türü", row["varlik_turu"]),
         ("Alan", f'{format_tr(float(row["alan_ha"]), 2)} ha'), ("Sigorta bedeli", _tl(row["sigorta_bedeli_tl"])),
         ("Poliçe durumu", "Aktif" if bool(row["police_aktif"]) else "Pasif"),
         ("Uydu hasar sınıfı", row["siddet"]),
     ])
     if decision == "RET":
         pay_html = '<p class="note">Karar RET olduğundan ödeme hesaplanmaz (₺0).</p>'
+    elif pay is None:
+        body = "".join(f'<tr><td>{_e(a)}</td><td class="num">{_e(b)}</td></tr>' for a, b in [
+            ("Şu an ödenecek", _tl(row["odenecek_tl"])),
+            ("Ekspertiz sonrası belirlenecek (en çok)", _tl(row["bekleyen_tl"]))])
+        pay_html = (f'<table class="t"><tr><th>Kalem</th><th class="num">Tutar</th></tr>{body}</table>'
+                    f'<p class="note">Tutarlar {_e(company)} yetkilisi tarafından belirlenmiştir.</p>')
     else:
         lines = [
             ("Sigorta bedeli", _tl(pay.insured)),
@@ -522,7 +562,8 @@ def build_notice_html(row: Mapping[str, Any], owner: str, rules: ClaimRules, eve
 
 <div class="decision"><div><span class="badge" style="background:{colour}">{_e(STATUS_LABELS[decision])}</span></div>
 <div style="flex:1"><div class="big">{_e(HEADLINES[decision])}</div>
-<p class="note" style="font-size:13.5px;color:#14181f">{_e(REASON_TEXT[trace.reason_key])}</p>
+<p class="note" style="font-size:13.5px;color:#14181f">{_e(REASON_TEXT[reason_key])}</p>
+{f'<p class="note" style="font-size:13.5px;color:#14181f"><b>{_e(company)} notu:</b> {_e(note_text)}</p>' if note_text else ""}
 <div class="kv"><div><span>HASAR ORANI</span><b>%{format_tr(float(row["hasar_yuzdesi"]), 1)}</b></div>
 <div><span>ÖDENECEK</span><b>{_e(_tl(row["odenecek_tl"]))}</b></div>
 <div><span>BEKLEYEN</span><b>{_e(_tl(row["bekleyen_tl"]))}</b></div></div></div></div>
