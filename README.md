@@ -18,7 +18,7 @@ Geliştirici: Elif Turut
 ## Ekranlar
 
 - **Web sitesi (giriş yapmadan):** üstte menü çubuğu — Ana Sayfa · Hakkımızda · Hizmetlerimiz · Nasıl çalışır · İletişim · **Giriş yap**.
-  Ana sayfa siyah zeminli, ince ve büyük yazılı bir ajans tarzındadır: kademeli dev başlık ve yalnızca CSS ile çizilen cam şekiller (görsel dosya yok),
+  Ana sayfa siyah zeminli, ince ve büyük yazılı bir ajans tarzındadır: kademeli dev başlık ve yalnızca CSS ile çizilen cam uzay nesneleri — uydu (gövde, güneş panelleri, anten), gezegen, yörünge (görsel dosya yok),
   hakkında + ürün kapsamı sayıları (4 alan, 3 uydu indeksi, 4 karar türü; müşteri ya da kullanım sayısı değildir), numaralı hizmet ızgarası, adımlar ve çağrı bölümü.
   Hizmetlerimiz dört alanı ayrı ayrı ve hangi aşamada olduklarıyla anlatır; Nasıl çalışır akış çizgisi, beş adım ve sık sorulan soruları içerir.
   Sayfalar adres çubuğundan da açılır (`?sayfa=hakkimizda`, `hizmetler`, `nasil`, `iletisim`). Site hesap ya da veri içermez; durumunu

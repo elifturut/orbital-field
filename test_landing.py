@@ -150,8 +150,10 @@ builders = {
     "steps": landing.build_steps_html(),
     "offer_demo": landing.build_offer_html(True),
     "offer": landing.build_offer_html(False),
-    "glass_cube": landing.build_glass("cube", "g-hero"),
-    "glass_pill": landing.build_glass("pill"),
+    "glass_sat": landing.build_glass("sat", "g-hero"),
+    "glass_sphere": landing.build_glass("sphere"),
+    "glass_orbit": landing.build_glass("orbit"),
+    "glass_globe": landing.build_glass("globe"),
     "pillars": landing.build_pillars(),
     "about": landing.build_about_html(),
     "services": landing.build_services_html(),
@@ -180,13 +182,19 @@ check("menü etiketleri CSS'e bırakılmadan büyük harf yazılı", all(lab == 
 check("menü etiketlerinde Türkçe harfler doğru", dict(landing.PAGES)["hizmetler"] == "HİZMETLERİMİZ" and dict(landing.PAGES)["hakkimizda"] == "HAKKIMIZDA"
       and dict(landing.PAGES)["iletisim"] == "İLETİŞİM")
 hh = builders["hero"]
-check("kahraman: dört satırlı başlık (sıra korunur), cam küp ve etiket", landing.HERO_LINES == ("UYDUDAN", "PARSELE,", "PARSELDEN", "KARARA.")
-      and all(f'<span class="l{i}">{t}</span>' in hh for i, t in enumerate(landing.HERO_LINES, 1)) and hh.count('class="lp-glass cube') == 1
+check("kahraman: dört satırlı başlık (sıra korunur), cam uydu ve etiket", landing.HERO_LINES == ("UYDUDAN", "PARSELE,", "PARSELDEN", "KARARA.")
+      and all(f'<span class="l{i}">{t}</span>' in hh for i, t in enumerate(landing.HERO_LINES, 1)) and hh.count('class="lp-glass sat g-hero"') == 1
       and 'role="heading" aria-level="1"' in hh)
 check("kahraman SVG/resim içermez (yalnızca CSS)", not re.search(r"<svg|<img|<image|<canvas|<video", hh + builders["bento"] + builders["offer_demo"], re.I))
-check("cam şekiller ekran okuyuculardan gizli", all('aria-hidden="true"' in builders[k] for k in ("glass_cube", "glass_pill")))
-check("cam şekil türleri: cube/pill", 'lp-glass cube' in builders["glass_cube"] and 'lp-glass pill' in builders["glass_pill"])
-for bad_kind in ("", "sphere", None, 3):
+check("cam şekiller ekran okuyuculardan gizli", all(builders[k].startswith('<span class="lp-glass ') and 'aria-hidden="true"' in builders[k]
+      for k in ("glass_sat", "glass_sphere", "glass_orbit", "glass_globe")))
+check("uydu: gövde, iki güneş paneli (sol/sağ) ve anten; gezegen boş; yörünge noktalı; küre çekirdekli",
+      all(x in builders["glass_sat"] for x in ('<i class="wing l"></i>', '<i class="wing r"></i>', '<i class="body"></i>', '<i class="ant"></i>'))
+      and builders["glass_sat"].count("<i ") == 4 and "<i" not in builders["glass_sphere"]
+      and builders["glass_orbit"].count('class="dot"') == 1 and "core" not in builders["glass_orbit"]
+      and 'class="core"' in builders["glass_globe"] and 'class="dot"' in builders["glass_globe"])
+check("cam şekil türleri sınıf adında", all(f'lp-glass {k}' in builders["glass_" + k] for k in ("sat", "sphere", "orbit", "globe")))
+for bad_kind in ("", "cube", "pill", None, 3):
     try:
         landing.build_glass(bad_kind)
         check(f"geçersiz cam şekil türü reddedilir: {bad_kind!r}", False)
@@ -194,27 +202,28 @@ for bad_kind in ("", "sphere", None, 3):
         check(f"geçersiz cam şekil türü reddedilir: {bad_kind!r}", True)
 for bad_cls in ('x"><script>alert(1)</script>', "A", "a;b", "a\nb", "x" * 41, "a<b"):
     try:
-        landing.build_glass("cube", bad_cls)
+        landing.build_glass("sat", bad_cls)
         check(f"geçersiz sınıf adı reddedilir: {bad_cls!r:.30}", False)
     except ValueError:
         check(f"geçersiz sınıf adı reddedilir: {bad_cls!r:.30}", True)
-check("cam şekil sabittir (iki çağrı aynı)", landing.build_glass("cube", "g-hero") == landing.build_glass("cube", "g-hero"))
+check("cam şekil sabittir (iki çağrı aynı)", landing.build_glass("sat", "g-hero") == landing.build_glass("sat", "g-hero"))
 check("ürün kapsamı sayıları gerçekle tutarlı (4 alan, 3 indeks, 4 karar türü)",
       landing.STATS[0][0] == str(len(landing.SECTORS)) and landing.STATS[1][0] == "3" and landing.STATS[1][2] == "NDVI · NBR · dNBR"
       and landing.STATS[2][0] == "4" and landing.STATS[2][2].count("·") == 3)
 check("sayılar kullanım/müşteri iddiası olmadığını söyler", "müşteri ya da kullanım sayısı değildir" in landing.STATS_NOTE
       and "müşteri ya da kullanım sayısı değildir" in builders["stats"])
-check("istatistik: üç kutu ve iki cam şekil", builders["stats"].count('class="lp-stat"') == 3 and builders["stats"].count("lp-glass cube") == 2)
+check("istatistik: üç kutu, cam gezegen ve cam uydu", builders["stats"].count('class="lp-stat"') == 3
+      and builders["stats"].count("lp-glass sphere g-about") == 1 and builders["stats"].count("lp-glass sat g-edge") == 1)
 bt = builders["bento"]
 check("ızgara: dört kart + cam kart; ilk kart beyaz", len(re.findall(r'class="lp-bcard b[1-4]', bt)) == 4 and bt.count('class="lp-bcard bg"') == 1 and bt.count(" white") == 1
       and 'class="lp-bcard b1 white"' in bt)
 check("ızgara: 01-04 numaraları ve ÇEKİRDEK/GENİŞLEME etiketleri", all(f'<span class="num">0{i}</span>' in bt for i in range(1, 5))
       and bt.count('<span class="st">ÇEKİRDEK</span>') == 2 and bt.count('<span class="st">GENİŞLEME</span>') == 2)
 check("ızgara başlıkları Türkçe büyük harf", all(landing.tr_upper(c[1]) in bt for c in landing.SECTORS) and "KAÇAK YAPILAŞMA VE YEŞİL ALAN" in bt)
-check("ızgara cam kartı gizli ve metinsiz", re.search(r'<div class="lp-bcard bg" aria-hidden="true"><span class="lp-glass pill g-bento" aria-hidden="true"></span></div>', bt) is not None)
+check("ızgara cam kartı gizli ve metinsiz (yörüngeli küre)", re.search(r'<div class="lp-bcard bg" aria-hidden="true"><span class="lp-glass globe g-bento" aria-hidden="true"><i class="core"></i><i class="dot"></i></span></div>', bt) is not None)
 check("adımlar: üç çerçeveli kart, numaralı", builders["steps"].count('class="lp-bcard"') == 3 and all(f'<span class="num">0{i}</span>' in builders["steps"] for i in (1, 2, 3)))
-check("çağrı bölümü: başlık, cam hap; demo cümlesi yalnızca demoda",
-      "UYGULAMAYI DENEYİN" in builders["offer_demo"] and "lp-glass pill g-offer" in builders["offer_demo"]
+check("çağrı bölümü: başlık, cam yörünge; demo cümlesi yalnızca demoda",
+      "UYGULAMAYI DENEYİN" in builders["offer_demo"] and "lp-glass orbit g-offer" in builders["offer_demo"]
       and "demo hesaplarla" in builders["offer_demo"] and "demo hesaplarla" not in builders["offer"])
 check("bölüm başlıkları anlamsal (aria-level 2)", all('role="heading" aria-level="2"' in builders[k] for k in ("about_head", "services_head", "steps_head", "offer")))
 check("yazı logosu: ad ve kırmızı nokta", builders["nav_brand"] == '<div class="lp-logo">orbital field<i>.</i></div>')
@@ -269,7 +278,7 @@ check("değer önermeleri dört tane ve rakam içermez", len(landing.PILLARS) ==
 
 # --- CSS
 for key in (".flow.c2", ".flow.c4", ".lp-cta", ".lp-contact", ".lp-hero", ".st-key-lp_nav", "st-key-navon_", ".st-key-lp_nav .st-key-lp_login",
-            "st-key-lp_pri_", "st-key-lp_sec_", ".lp-hero2", ".lp-display", ".lp-glass", ".lp-glass::before", ".lp-glass::after", ".lp-bento", ".lp-bcard",
+            "st-key-lp_pri_", "st-key-lp_sec_", ".lp-hero2", ".lp-display", ".lp-glass", ".lp-glass .body{", ".lp-glass .wing.l{", ".lp-glass .wing.r{", ".lp-glass .ant{", ".lp-glass .wing", ".lp-glass .ant", ".lp-glass .core", ".lp-glass .dot", ".lp-glass.sphere", ".lp-glass.orbit", ".lp-glass.globe", ".lp-bento", ".lp-bcard",
             ".lp-bcard.white", ".lp-steps", ".lp-offer", ".lp-stat", ".lp-h2", ".lp-logo", ".lp-svc", ".lp-svc-head .tag", ".lp-list",
             ".lp-pipeline", ".lp-band", ".lp-pillars", ".st-key-lp_center_btns", ".st-key-lp_right_btn", "prefers-reduced-motion", "@keyframes lpfloat"):
     check(f"CSS tanımı: {key}", key in landing.LANDING_CSS)

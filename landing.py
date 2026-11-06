@@ -341,22 +341,31 @@ def _h2(text: str, cls: str = "") -> str:
     return f'<div class="lp-h2{" " + cls if cls else ""}" role="heading" aria-level="2">{_h(text)}</div>'
 
 
-def build_glass(kind: str = "cube", cls: str = "") -> str:
-    """Süs amaçlı cam (yarı saydam, gökkuşağı kenarlı) 3B şekil; yalnızca CSS ile çizilir.
+#: Cam şekil türü → içindeki süs parçaları (uydu: gövde + iki güneş paneli + anten; gezegen; yörünge; yörüngeli küre).
+_GLASS_KINDS: Dict[str, str] = {
+    "sat": '<i class="wing l"></i><i class="body"></i><i class="wing r"></i><i class="ant"></i>',
+    "sphere": "",
+    "orbit": '<i class="dot"></i>',
+    "globe": '<i class="core"></i><i class="dot"></i>',
+}
+
+
+def build_glass(kind: str = "sat", cls: str = "") -> str:
+    """Süs amaçlı cam (yarı saydam, gökkuşağı kenarlı) uzay nesnesi; yalnızca CSS ile çizilir.
 
     Args:
-        kind: ``cube`` (yuvarlatılmış kare) ya da ``pill`` (hap).
+        kind: ``sat`` (uydu), ``sphere`` (gezegen), ``orbit`` (yörünge halkası) ya da ``globe`` (yörüngeli küre).
         cls: Konumlandırma için ek sınıf adları (küçük harf, rakam, boşluk, tire).
 
     Returns:
         HTML dizgesi (ekran okuyuculardan gizli).
     """
-    if kind not in ("cube", "pill"):
-        raise ValueError("kind cube ya da pill olmalı")
+    if kind not in _GLASS_KINDS:
+        raise ValueError("kind sat, sphere, orbit ya da globe olmalı")
     if not _CLASS_RE.fullmatch(cls):
         raise ValueError("cls yalnızca küçük harf, rakam, boşluk ve tire içerebilir")
     extra = f" {cls}" if cls else ""
-    return f'<span class="lp-glass {kind}{extra}" aria-hidden="true"></span>'
+    return f'<span class="lp-glass {kind}{extra}" aria-hidden="true">{_GLASS_KINDS[kind]}</span>'
 
 
 def build_nav_brand() -> str:
@@ -365,10 +374,10 @@ def build_nav_brand() -> str:
 
 
 def build_home_hero() -> str:
-    """Ana sayfa kahramanı: üst etiket, kademeli dev başlık ve başlığın üstünde yüzen cam şekil."""
+    """Ana sayfa kahramanı: üst etiket, kademeli dev başlık ve başlığın üstünde yüzen cam uydu."""
     lines = "".join(f'<span class="l{i}">{_h(t)}</span>' for i, t in enumerate(HERO_LINES, 1))
     return ('<div class="lp-hero2"><div class="lp-eyebrow">UYDU VERİSİ · KARAR PLATFORMU</div>'
-            f'<div class="lp-display" role="heading" aria-level="1">{lines}</div>{build_glass("cube", "g-hero")}</div>')
+            f'<div class="lp-display" role="heading" aria-level="1">{lines}</div>{build_glass("sat", "g-hero")}</div>')
 
 
 def build_hero_copy() -> str:
@@ -383,11 +392,11 @@ def build_about_head() -> str:
 
 
 def build_stats_html() -> str:
-    """Ürün kapsamı sayıları ve iki cam şekil (sağ sütun); sayılar kapsamı gösterir, kullanım iddiası taşımaz."""
+    """Ürün kapsamı sayıları, cam gezegen ve kenardan taşan cam uydu (sağ sütun); sayılar kapsamı gösterir, kullanım iddiası taşımaz."""
     items = "".join(f'<div class="lp-stat"><b>{_h(n)}</b><span>{_h(lab)}</span><small>{_h(sub)}</small></div>'
                     for n, lab, sub in STATS)
     return (f'<div class="lp-stats-wrap"><div class="lp-stats">{items}</div><p class="lp-note">{_h(STATS_NOTE)}</p>'
-            f'{build_glass("cube", "g-about")}{build_glass("cube", "g-edge")}</div>')
+            f'{build_glass("sphere", "g-about")}{build_glass("sat", "g-edge")}</div>')
 
 
 def build_services_head() -> str:
@@ -396,7 +405,7 @@ def build_services_head() -> str:
 
 
 def build_bento_html() -> str:
-    """Dört hizmetin "bento" ızgarası: çerçeveli yuvarlak kartlar, bir tanesi beyaz, bir tanesi cam şekilli süs.
+    """Dört hizmetin "bento" ızgarası: çerçeveli yuvarlak kartlar, bir tanesi beyaz, bir tanesi yörüngeli cam küre süsü.
 
     Kartlar :data:`SECTORS` sırasındadır (01 sigorta … 04 afet); sağ üstte "ÇEKİRDEK" ya da "GENİŞLEME" etiketi görünür.
     """
@@ -407,7 +416,7 @@ def build_bento_html() -> str:
         cards.append(
             f'<div class="lp-bcard b{i}{white}"><span class="num">{i:02d}</span><span class="st">{_h(status)}</span>'
             f'<div class="t">{_h(tr_upper(title))}</div><p>{_h(text)}</p></div>')
-    cards.append(f'<div class="lp-bcard bg" aria-hidden="true">{build_glass("pill", "g-bento")}</div>')
+    cards.append(f'<div class="lp-bcard bg" aria-hidden="true">{build_glass("globe", "g-bento")}</div>')
     return f'<div class="lp-bento">{"".join(cards)}</div>'
 
 
@@ -427,14 +436,14 @@ def build_steps_html() -> str:
 
 
 def build_offer_html(demo: bool = False) -> str:
-    """Sayfa sonu çağrı bölümü: ortalanmış ince başlık, kısa metin ve arkasında hap biçimli cam şekil.
+    """Sayfa sonu çağrı bölümü: ortalanmış ince başlık, kısa metin ve arkasında cam yörünge halkası.
 
     Args:
         demo: Demo hesaplar giriş ekranında gösteriliyorsa ``True``.
     """
     text = ("Giriş ekranındaki demo hesaplarla sigortacı ve müşteri ekranlarını kendiniz gezin." if demo
             else "Hesabınız varsa giriş yapın; yoksa bize yazın.")
-    return (f'<div class="lp-offer">{build_glass("pill", "g-offer")}'
+    return (f'<div class="lp-offer">{build_glass("orbit", "g-offer")}'
             f'{_h2("UYGULAMAYI DENEYİN", "center")}<p class="lp-lead center">{_h(text)}</p></div>')
 
 
@@ -628,24 +637,48 @@ LANDING_CSS = """
 .st-key-lp_right_btn, .st-key-lp_right_btn_how{ display:flex; justify-content:flex-end; padding-top:clamp(40px,8vw,104px); }
 .st-key-lp_center_btns .stButton{ display:flex; justify-content:center; }
 .st-key-lp_center_btns{ position:relative; z-index:4; }
-/* ---- cam 3B şekiller (yalnızca CSS; süs) ---- */
-.lp-glass{ position:absolute; z-index:3; display:block; pointer-events:none; width:var(--s,150px); height:var(--s,150px);
-  border-radius:30%; transform:rotate(var(--r,-16deg));
+/* ---- cam uzay nesneleri: uydu, gezegen, yörünge (yalnızca CSS; süs) ---- */
+.lp-glass{ position:absolute; z-index:3; display:block; pointer-events:none; width:var(--s,200px); transform:rotate(var(--r,-16deg));
+  animation:lpfloat 9s ease-in-out infinite; }
+.lp-glass.sat{ height:calc(var(--s) * .46); } .lp-glass.sphere{ height:var(--s); }
+.lp-glass.orbit{ height:calc(var(--s) * .3); } .lp-glass.globe{ height:calc(var(--s) * .42); }
+.lp-glass i{ position:absolute; display:block; }
+.lp-glass .body, .lp-glass .wing, .lp-glass .core, .lp-glass.sphere, .lp-glass .dot{ box-sizing:border-box;
   background:radial-gradient(90% 90% at 28% 16%, rgba(255,255,255,.34), rgba(255,255,255,0) 46%),
     radial-gradient(120% 120% at 74% 88%, rgba(120,150,255,.36), rgba(120,150,255,0) 56%),
     linear-gradient(145deg, rgba(44,48,60,.55), rgba(6,7,10,.80));
-  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22), inset 10px 12px 26px rgba(255,196,140,.30),
-    inset -12px -14px 28px rgba(112,140,255,.30), 0 34px 70px rgba(0,0,0,.65);
-  -webkit-backdrop-filter:blur(5px) saturate(1.5); backdrop-filter:blur(5px) saturate(1.5);
-  animation:lpfloat 9s ease-in-out infinite; }
-.lp-glass::before{ content:""; position:absolute; inset:0; border-radius:inherit; padding:3px;
+  box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22), inset 8px 10px 22px rgba(255,196,140,.28),
+    inset -10px -12px 24px rgba(112,140,255,.28), 0 26px 56px rgba(0,0,0,.6);
+  -webkit-backdrop-filter:blur(5px) saturate(1.5); backdrop-filter:blur(5px) saturate(1.5); }
+.lp-glass .body::before, .lp-glass .wing::before, .lp-glass .core::before, .lp-glass .dot::before, .lp-glass.sphere::before, .lp-glass.orbit::before, .lp-glass.globe::before{
+  content:""; position:absolute; inset:0; border-radius:inherit; padding:2.5px;
   background:conic-gradient(from 210deg, #ffb36b, #ff5f8f, #8a7bff, #61d8ff, #ffe08a, #ffb36b);
   -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity:.8; }
-.lp-glass::after{ content:""; position:absolute; inset:15%; border-radius:26%;
-  background:linear-gradient(160deg, rgba(0,0,0,.74), rgba(0,0,0,.34)); box-shadow:inset 0 0 0 1px rgba(255,255,255,.10); }
-.lp-glass.pill{ width:var(--s,240px); height:calc(var(--s,240px) * .5); border-radius:999px; }
-.lp-glass.pill::after{ border-radius:999px; inset:18% 9%; }
+  mask:linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); opacity:.85; }
+/* uydu: ortada gövde, iki yanda güneş paneli, üstte anten; kollar ince bir çizgi */
+.lp-glass.sat::after{ content:""; position:absolute; left:20%; right:20%; top:calc(50% - 1px); height:2px; background:rgba(255,255,255,.38); }
+.lp-glass .body{ left:calc(50% - var(--s) * .155); top:calc(50% - var(--s) * .155); width:calc(var(--s) * .31); height:calc(var(--s) * .31);
+  border-radius:26%; z-index:2; }
+.lp-glass .body::after{ content:""; position:absolute; inset:17%; border-radius:22%;
+  background:radial-gradient(circle at 50% 50%, rgba(252,61,33,.95) 0 7%, transparent 9%), linear-gradient(160deg, rgba(0,0,0,.74), rgba(0,0,0,.34));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10); }
+.lp-glass .wing{ top:calc(50% - var(--s) * .105); width:calc(var(--s) * .29); height:calc(var(--s) * .21); border-radius:8%; z-index:1; }
+.lp-glass .wing.l{ left:0; transform:skewY(7deg); } .lp-glass .wing.r{ right:0; transform:skewY(-7deg); }
+.lp-glass .wing::after{ content:""; position:absolute; inset:7%; border-radius:4%;
+  background-image:linear-gradient(90deg, rgba(255,255,255,.3) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,.3) 1px, transparent 1px);
+  background-size:25% 100%, 100% 33.34%; }
+.lp-glass .ant{ left:calc(50% - 1px); bottom:calc(50% + var(--s) * .155); width:2px; height:calc(var(--s) * .1); background:rgba(255,255,255,.55); z-index:1; }
+.lp-glass .ant::before{ content:""; position:absolute; left:calc(var(--s) * -.032); top:calc(var(--s) * -.03); width:calc(var(--s) * .066); height:calc(var(--s) * .033);
+  border-radius:calc(var(--s) * .066) calc(var(--s) * .066) 0 0; border:2px solid rgba(255,255,255,.7); border-bottom:none; box-sizing:border-box; }
+/* gezegen: küre, enlem çizgileri */
+.lp-glass.sphere{ border-radius:50%; }
+.lp-glass.sphere::after, .lp-glass .core::after{ content:""; position:absolute; inset:6%; border-radius:50%;
+  background:repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 1px, transparent 1px 22%),
+    radial-gradient(ellipse 30% 50% at 50% 50%, transparent 93%, rgba(255,255,255,.16) 96%, transparent 99%); }
+/* yörünge: eğik halka ve üzerinde küçük uydu noktası; küre: halkanın ortasında gezegen */
+.lp-glass.orbit::before, .lp-glass.globe::before{ border-radius:50%; padding:3px; opacity:.9; }
+.lp-glass .dot{ left:88%; top:18%; width:calc(var(--s) * .06); height:calc(var(--s) * .06); margin:calc(var(--s) * -.03) 0 0 calc(var(--s) * -.03); border-radius:50%; z-index:2; }
+.lp-glass .core{ left:calc(50% - var(--s) * .17); top:calc(50% - var(--s) * .17); width:calc(var(--s) * .34); height:calc(var(--s) * .34); border-radius:50%; }
 @keyframes lpfloat{ 0%,100%{ transform:translate3d(0,0,0) rotate(var(--r,-16deg)); }
   50%{ transform:translate3d(0,-12px,0) rotate(calc(var(--r,-16deg) + 3deg)); } }
 @media (prefers-reduced-motion:reduce){ .lp-glass{ animation:none; } }
@@ -655,11 +688,11 @@ LANDING_CSS = """
 .lp-display{ position:relative; z-index:2; font:200 clamp(2.6rem,9vw,8rem)/.98 'Inter',sans-serif; letter-spacing:-.035em; color:#fff; }
 .lp-display span{ display:block; white-space:nowrap; }
 .lp-display .l2{ margin-left:1.05em; } .lp-display .l3{ margin-left:.25em; } .lp-display .l4{ margin-left:2.1em; }
-.g-hero{ --s:clamp(120px,18vw,250px); --r:-14deg; top:clamp(6px,3vw,44px); left:48%; }
+.g-hero{ --s:clamp(210px,31vw,460px); --r:-16deg; top:clamp(6px,2vw,40px); left:50%; }
 .lp-copy{ max-width:440px; padding:clamp(4px,1vw,14px) 0 6px; }
 .lp-copy p{ margin:0 0 14px; font:300 .92rem/1.65 'Inter',sans-serif; color:rgba(255,255,255,.78); }
 @media (max-width:820px){
-  .g-hero{ --s:104px; left:auto; right:2%; top:0; }
+  .g-hero{ --s:150px; left:auto; right:0; top:30px; }
   .st-key-lp_right_btn, .st-key-lp_right_btn_how{ padding-top:0; justify-content:flex-start; }
 }
 /* ---- bölümler ---- */
@@ -674,8 +707,8 @@ LANDING_CSS = """
 .lp-stat span{ display:block; margin-top:8px; font:400 .74rem 'Inter',sans-serif; letter-spacing:.12em; color:rgba(255,255,255,.62); }
 .lp-stat small{ display:block; margin-top:4px; font:300 .72rem 'Inter',sans-serif; color:rgba(255,255,255,.42); }
 .lp-note{ position:relative; z-index:2; margin:22px 0 0; text-align:left; max-width:340px; font:300 .72rem 'Inter',sans-serif; color:rgba(255,255,255,.4); }
-.g-about{ --s:clamp(64px,7vw,96px); --r:12deg; right:26%; bottom:-2px; }
-.g-edge{ --s:clamp(100px,12vw,170px); --r:-24deg; right:-4%; bottom:-30%; }
+.g-about{ --s:clamp(58px,6.5vw,90px); --r:0deg; right:42%; bottom:2px; }
+.g-edge{ --s:clamp(150px,19vw,270px); --r:-22deg; right:-9%; bottom:-14%; }
 @media (max-width:820px){ .lp-stats{ justify-content:flex-start; } }
 /* ---- bento kartlar ---- */
 .lp-bento{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:26px; }
@@ -693,7 +726,7 @@ LANDING_CSS = """
 .lp-bcard.white p{ color:rgba(0,0,0,.72); }
 .lp-bcard.b1{ grid-column:1; grid-row:1; } .lp-bcard.b2{ grid-column:2 / span 2; grid-row:1; }
 .lp-bcard.b3{ grid-column:1; grid-row:2; } .lp-bcard.b4{ grid-column:2; grid-row:2; } .lp-bcard.bg{ grid-column:3; grid-row:2; overflow:hidden; }
-.g-bento{ --s:clamp(150px,17vw,240px); --r:-32deg; left:12%; top:30%; }
+.g-bento{ --s:clamp(190px,22vw,300px); --r:-14deg; left:50%; top:50%; margin:calc(var(--s) * -.21) 0 0 calc(var(--s) * -.5); }
 @media (max-width:820px){
   .lp-bento{ grid-template-columns:1fr; }
   .lp-bcard.b1, .lp-bcard.b2, .lp-bcard.b3, .lp-bcard.b4, .lp-bcard.bg{ grid-column:1; grid-row:auto; }
@@ -705,9 +738,8 @@ LANDING_CSS = """
 /* ---- çağrı bölümü ---- */
 .lp-offer{ position:relative; padding:clamp(54px,9vw,120px) 0 10px; }
 .lp-offer .lp-h2, .lp-offer .lp-lead{ position:relative; z-index:2; }
-.g-offer{ --s:clamp(240px,50vw,640px); --r:-8deg; left:50%; margin-left:calc(var(--s) * -.5);
-  top:calc(clamp(54px,9vw,120px) + 1.8rem - var(--s) * .17); z-index:1; opacity:.92; }
-.g-offer.pill{ height:calc(var(--s) * .34); }
+.g-offer{ --s:clamp(280px,60vw,760px); --r:-6deg; left:50%; margin-left:calc(var(--s) * -.5);
+  top:calc(clamp(54px,9vw,120px) + 1.8rem - var(--s) * .15); z-index:1; opacity:.95; }
 .note.info{ background:transparent; border:1px solid rgba(255,255,255,.22); border-radius:22px; margin-top:26px; }
 /* ---- diğer sayfaların başlığı ---- */
 .lp-hero{ border-bottom:none; padding:clamp(24px,5vw,56px) 0 6px; }
