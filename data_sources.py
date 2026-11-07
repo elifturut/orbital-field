@@ -710,14 +710,16 @@ class PipelineSource:
 
 
 PIPELINE: Tuple[PipelineSource, ...] = (
-    PipelineSource("Sentinel-2 L2A (Copernicus CDSE)", "10 m; B04, B08, B12, SCL", "NDVI, NBR, dNBR; parsel hasar ve bitki sağlığı",
+    PipelineSource("Sentinel-2 L2A (Earth Search STAC + COG)", "10 m; B04, B08, B12, SCL; bulut filtresi", "Analiz iş akışı: önce/sonra görüntüsü, NDVI, NBR, dNBR, değişim haritası",
+                   "Sentetik (varsayılan); canlı seçenek var", "Yazıldı, sahte yanıtlarla çevrimdışı test edildi; canlı test bekliyor (iş akışında 'Canlı bağlantıyı sına')", "Anahtarsız genel API; rasterio gerekir"),
+    PipelineSource("Sentinel-2 L2A (Copernicus CDSE)", "10 m; B04, B08, B12, SCL", "NDVI, NBR, dNBR; parsel hasar ve bitki sağlığı (istatistik API)",
                    "Sentetik", "Yazıldı, çevrimdışı test edildi; canlı test bekliyor", "Hesap + OAuth istemcisi; genel kullanıcı kotası ayda 10.000 istek"),
-    PipelineSource("NASA FIRMS", "VIIRS 375 m, MODIS 1 km aktif yangın", "Termal anomali, FRP; afet modülü",
+    PipelineSource("NASA FIRMS", "VIIRS 375 m, MODIS 1 km aktif yangın", "Termal anomali, FRP; olay tarihine ve koordinata göre eşleşen yangın noktaları",
                    "Sentetik", "Yazıldı, çevrimdışı test edildi; canlı test bekliyor", "Ücretsiz MAP_KEY"),
-    PipelineSource("Parsel sınırları", "Müşterinin GeoJSON / Shapefile dosyası", "Sigorta ve tarım parselleri",
-                   "Sentetik ızgara", "Planlı", "Müşteri yükler"),
+    PipelineSource("Parsel sınırları", "Haritadan çizim, koordinat, GeoJSON metni", "Sigorta ve tarım parselleri",
+                   "Sentetik ızgara", "Analiz iş akışında kullanılabilir; toplu dosya yükleme planlı", "Müşteri çizer ya da yapıştırır"),
     PipelineSource("Poliçe ve hasar kayıtları", "Müşterinin CSV dosyası", "Karar tablosu, kural testi",
                    "Sentetik poliçeler", "Planlı", "Müşteri yükler"),
-    PipelineSource("Meteoroloji", "Yağış, sıcaklık", "Su stresi ve kuraklık dönemleri",
-                   "Sentetik", "Planlı", "Kaynak seçimi bekliyor"),
+    PipelineSource("Meteoroloji (Open-Meteo, ERA5 tabanlı arşiv)", "Günlük yağış, sıcaklık, rüzgâr, ET0", "Sel/kuraklık/yangın olayını hava verisiyle doğrulama (istasyon ölçümü değildir)",
+                   "Sentetik", "Yazıldı, sahte yanıtlarla çevrimdışı test edildi; canlı test bekliyor", "Anahtarsız genel API"),
 )

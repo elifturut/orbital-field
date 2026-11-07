@@ -231,7 +231,7 @@ check("ortam okuma + kırpma", c.cdse_client_id == "id" and c.has_cdse and c.has
 check("Credentials repr sır göstermez", SECRET not in repr(c) and KEY not in repr(c))
 e = ds.load_credentials({})
 check("boş ortam → yok", not e.has_cdse and not e.has_firms)
-check("PIPELINE 5 kaynak, hepsi dolu", len(ds.PIPELINE) == 5 and all(all(isinstance(x, str) and x for x in vars(r).values()) for r in ds.PIPELINE))
+check("PIPELINE 6 kaynak, hepsi dolu", len(ds.PIPELINE) == 6 and all(all(isinstance(x, str) and x for x in vars(r).values()) for r in ds.PIPELINE))
 
 print()
 print("BAŞARISIZ:", FAILS if FAILS else "yok — tüm kontroller geçti")

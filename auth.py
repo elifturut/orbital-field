@@ -30,7 +30,7 @@ __all__ = [
     "Role", "Account", "Principal", "LoginState", "AuthResult", "ROLE_LABELS", "DEMO_ACCOUNTS", "DEMO_PASSWORDS",
     "PBKDF2_ITERATIONS", "MAX_FAILURES", "LOCK_SECONDS", "IDLE_TIMEOUT_S", "MIN_ITERATIONS",
     "hash_password", "verify_password", "normalise_username", "demo_accounts", "parse_accounts", "authenticate",
-    "session_expired", "permissions_for", "allowed", "require", "tabs_for", "INSURER_TABS", "account_entry",
+    "session_expired", "quick_demo_account", "permissions_for", "allowed", "require", "tabs_for", "INSURER_TABS", "account_entry",
     "PERM_DECIDE", "PERM_ADMIN", "MAX_TITLE",
 ]
 
@@ -70,8 +70,9 @@ ROLE_PERMISSIONS: Dict[Role, FrozenSet[str]] = {
     Role.CUSTOMER: frozenset({PERM_PORTAL_OWN}),
 }
 
-#: Sigortacı için ana sekme sırası: dört çekirdek sekme ve tarım/belediye/kurtarmayı toplayan genişleme sekmesi.
-INSURER_TABS: Tuple[str, ...] = ("GENEL BAKIŞ", "SİGORTA", "MÜŞTERİ DOSYALARI", "KALİBRASYON", "DİĞER SEKTÖRLER",
+#: Sigortacı için ana sekme sırası: genel bakışın hemen ardından altı adımlı analiz iş akışı, dört çekirdek sekme ve
+#: tarım/belediye/kurtarmayı toplayan genişleme sekmesi.
+INSURER_TABS: Tuple[str, ...] = ("GENEL BAKIŞ", "ANALİZ İŞ AKIŞI", "SİGORTA", "MÜŞTERİ DOSYALARI", "KALİBRASYON", "DİĞER SEKTÖRLER",
                                  "YÖNETİM")
 
 
@@ -260,6 +261,25 @@ DEMO_ACCOUNTS: Tuple[Account, ...] = (
 def demo_accounts() -> Tuple[Account, ...]:
     """Dahili demo hesaplarını döndürür."""
     return DEMO_ACCOUNTS
+
+
+def quick_demo_account(accounts: Sequence[Account], role: Role) -> Optional[Account]:
+    """"Olarak dene" düğmeleri için demo hesabı: yalnızca dahili demo hesaplarından seçer (gerçek hesaplara asla düşmez).
+
+    Sigortacıda unvanında "Ekspertiz" geçen hesap tercih edilir; yoksa ilk sigortacı. Müşteride ilk müşteri hesabı.
+
+    Args:
+        accounts: Geçerli hesaplar (demo kapalıysa dahili hesaplar içinde olmayabilir).
+        role: İstenen rol.
+
+    Returns:
+        Hesap ya da uygun demo hesabı yoksa ``None``.
+    """
+    demo_names = {a.username for a in DEMO_ACCOUNTS}
+    cands = [a for a in accounts if a.role is role and a.username in demo_names and a.username in DEMO_PASSWORDS]
+    if role is Role.INSURER:
+        cands.sort(key=lambda a: "ekspertiz" not in (a.title or "").lower())
+    return cands[0] if cands else None
 
 
 def parse_accounts(text: str) -> Tuple[Account, ...]:

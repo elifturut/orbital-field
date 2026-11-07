@@ -51,6 +51,7 @@ from folium.raster_layers import ImageOverlay
 from streamlit.errors import StreamlitAPIException
 from streamlit_folium import st_folium
 
+import analysis as an_core
 import auth
 import basemaps as bm
 import calibration as cal
@@ -62,6 +63,7 @@ import portal as pt
 import reports as rep
 import store as stm
 import tenancy
+import workflow_page as wpage
 from data_engine import ClaimRules, format_tr
 
 LOGGER = logging.getLogger("cok_yonlu_platform")
@@ -732,7 +734,7 @@ def build_footer_html() -> str:
     return f"""
     <div class="footer">
       <span><b>ORBITAL FIELD</b> · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip v1.0</span>
-      <span>Tüm veriler sentetiktir · {now} (UTC+3)</span>
+      <span>Varsayılan veriler sentetiktir · {now} (UTC+3)</span>
       <span>Geliştirici: <b>Elif Turut</b></span>
     </div>"""
 
@@ -1158,6 +1160,39 @@ def fit_bounds(fmap: folium.Map, lats: Sequence[float], lons: Sequence[float], p
     fmap.fit_bounds([[min(lats) - pad, min(lons) - pad], [max(lats) + pad, max(lons) + pad]])
 
 
+def draw_region_map(current: Optional[an_core.Region], key: str) -> Optional[Dict[str, Any]]:
+    """Haritada çokgen / dikdörtgen çizdirir ve çizilen son çokgenin GeoJSON geometrisini döndürür.
+
+    Çizim araçları sol üsttedir. Seçili bölge varsa haritada gösterilir ve harita ona odaklanır; yoksa Türkiye görünür.
+
+    Args:
+        current: Şu anki bölge (yoksa ``None``).
+        key: Benzersiz widget anahtarı (anahtar değişince çizimler sıfırlanır).
+
+    Returns:
+        ``Polygon`` geometrisi ya da henüz çizim yoksa ``None``.
+    """
+    centre, zoom = (current.centre, 14) if current is not None else ((39.0, 35.0), 6)
+    fmap = make_base_map(centre, zoom, get_settings().basemap)
+    if current is not None:
+        folium.GeoJson(current.geojson(), name="Seçili bölge",
+                       style_function=lambda _f: {"color": COLOR_ACCENT, "weight": 2, "fillOpacity": 0.12}).add_to(fmap)
+    shape = {"shapeOptions": {"color": COLOR_ACCENT, "weight": 2}}
+    plugins.Draw(export=False, position="topleft",
+                 draw_options={"polyline": False, "circle": False, "marker": False, "circlemarker": False,
+                               "polygon": {"allowIntersection": False, **shape}, "rectangle": shape},
+                 edit_options={"edit": False, "remove": True}).add_to(fmap)
+    try:
+        out = st_folium(fmap, height=460, use_container_width=True, returned_objects=["all_drawings"], key=key)
+    except TypeError:
+        out = st_folium(fmap, height=460, returned_objects=["all_drawings"], key=key)
+    for feat in reversed((out or {}).get("all_drawings") or []):
+        geom = feat.get("geometry") if isinstance(feat, dict) else None
+        if isinstance(geom, dict) and geom.get("type") == "Polygon":
+            return geom
+    return None
+
+
 # =========================================================================== #
 # SEKME 0 — GENEL BAKIŞ (odak, çalışma akışı, yol haritası, veri hattı)
 # =========================================================================== #
@@ -1183,8 +1218,9 @@ def render_overview_tab() -> None:
         "kullanılan analiz platformu.",
         ["DEMO · SENTETİK VERİ", "PROTOTİP v1.0"]))
     render_html(
-        '<div class="note info"><b>Bu prototipteki tüm veriler sentetiktir.</b> Gerçek Sentinel-2 ve NASA FIRMS '
-        "bağlantı adaptörleri yazıldı ve çevrimdışı test edildi; canlı uç noktalara karşı henüz çalıştırılmadı.</div>")
+        '<div class="note info"><b>Varsayılan veriler sentetiktir.</b> Gerçek Sentinel-2 (Earth Search), NASA FIRMS ve Open-Meteo '
+        "bağlantıları <b>Analiz iş akışı</b> sekmesinde “Canlı” kaynak seçeneğiyle denenebilir. Bu adaptörler sahte yanıtlarla "
+        "çevrimdışı test edildi; canlı uç noktalara karşı henüz doğrulanmadı (sekmedeki “Canlı bağlantıyı sına” düğmesi bunu yapar).</div>")
 
     render_html(build_section_title("PAZAR BAĞLAMI · TÜRKİYE TARIM SİGORTASI", f"{MARKET.year} · devlet destekli"))
     render_html(build_kpi_grid([
@@ -2921,6 +2957,21 @@ def load_contact_email() -> str:
     return landing.valid_email(value)
 
 
+def read_secret(name: str) -> str:
+    """Bir gizli ayarı ortam değişkeninden ya da ``st.secrets``'tan okur (yoksa boş metin; değer günlüğe/ekrana yazılmaz).
+
+    Args:
+        name: Ayar adı (örn. ``FIRMS_MAP_KEY``).
+    """
+    value: Any = os.environ.get(name, "")
+    if not str(value).strip():
+        try:
+            value = st.secrets.get(name, "")
+        except Exception:      # secrets.toml yok ya da okunamadı
+            value = ""
+    return str(value or "").strip()
+
+
 def render_site_nav(current: str) -> None:
     """Karşılama sitesinin üst menü çubuğu: marka, beş sayfa düğmesi ve "Giriş yap".
 
@@ -3112,6 +3163,18 @@ def render_login(now: float) -> None:
             render_html(f'<div class="note err"><b>Hesap yapılandırması geçersiz</b> ({_h(ACCOUNTS_ENV)}): '
                         f"{_h(config_error)} Giriş kapalı.</div>")
             return
+        if is_demo:
+            render_html('<div class="side-label"><b>HIZLI DENEME</b> · demo hesabıyla tek tıkla</div>')
+            q1, q2 = st.columns(2)
+            for col, role, label, key in ((q1, auth.Role.CUSTOMER, "MÜŞTERİ OLARAK DENE", "login_try_customer"),
+                                          (q2, auth.Role.INSURER, "EKSPERTİZ OLARAK DENE", "login_try_insurer")):
+                if col.button(label, key=key):
+                    demo = auth.quick_demo_account(accounts, role)
+                    quick = auth.authenticate(accounts, demo.username, auth.DEMO_PASSWORDS[demo.username], state, now) if demo else None
+                    if quick is not None and quick.code == "ok" and quick.principal is not None:
+                        st.session_state[SESSION_USER] = quick.principal.to_session()
+                        st.session_state[SESSION_SEEN] = now
+                        st.rerun()
         with st.form("login_form", clear_on_submit=True):
             username = st.text_input("Kullanıcı adı", max_chars=auth.MAX_USERNAME)
             password = st.text_input("Parola", type="password", max_chars=auth.MAX_PASSWORD)
@@ -4179,9 +4242,19 @@ def render_sectors_tab() -> None:
             safe_render(renderer, title)
 
 
+def render_workflow_page() -> None:
+    """ANALİZ İŞ AKIŞI sekmesi: altı adımlı analiz sayfasına uygulamanın yardımcılarını verir."""
+    auth.require(session_principal(), auth.PERM_SECTORS)
+    wpage.render_workflow_tab(wpage.Kit(
+        render_html=render_html, show_frame=show_html_frame, panel=panel, hero=build_hero_html, section_title=build_section_title,
+        kpi_grid=build_kpi_grid, kpi=Kpi, rules=current_rules, draw_map=draw_region_map, read_secret=read_secret, csv_bytes=csv_bytes,
+        show_table=show_table, html_escape=_h))
+
+
 #: Sigortacı sekme etiketi → (hata iletisinde görünen ad, çizici). Etiketler ``auth.INSURER_TABS`` ile birebir aynıdır.
 TAB_RENDERERS: Dict[str, Tuple[str, Callable[[], None]]] = {
     "GENEL BAKIŞ": ("Genel Bakış", render_overview_tab),
+    "ANALİZ İŞ AKIŞI": ("Analiz iş akışı", render_workflow_page),
     "SİGORTA": ("Sigorta", render_insurance_tab),
     "MÜŞTERİ DOSYALARI": ("Müşteri dosyaları", render_casefiles_tab),
     "KALİBRASYON": ("Kalibrasyon", render_calibration_tab),
