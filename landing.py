@@ -26,8 +26,8 @@ __all__ = [
 
 #: İletişim adresini veren ayar (ortam değişkeni ya da ``st.secrets``).
 CONTACT_ENV = "ORBITAL_CONTACT_EMAIL"
-MAILTO_SUBJECT = "ORBITAL FIELD — demo / pilot görüşmesi"
-_MAILTO_BODY = ("Merhaba,\n\nORBITAL FIELD hakkında görüşmek istiyorum.\n\nAd soyad:\nKurum:\n"
+MAILTO_SUBJECT = "NYXE · ORBITAL FIELD — demo / pilot görüşmesi"
+_MAILTO_BODY = ("Merhaba,\n\nNyxe'nin ORBITAL FIELD ürünü hakkında görüşmek istiyorum.\n\nAd soyad:\nKurum:\n"
                 "İlgilendiğim alan (sigorta / tarım / belediye / afet):\n")
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]{1,64}@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,24}$")
 MAX_EMAIL = 120
@@ -49,7 +49,7 @@ _PAGE_LABELS: Dict[str, str] = dict(PAGES)
 #: Ana sayfa dışındaki sayfaların başlığı: (üst etiket, koyu kısım, soluk kısım, açıklama).
 _HEADERS: Dict[str, Tuple[str, str, str, str]] = {
     "hakkimizda": ("HAKKIMIZDA", "UYDU VERİSİNİ", "ANLAŞILIR BİR KARARA ÇEVİRİYORUZ.",
-                   "ORBITAL FIELD, kod yazmadan uydu analizi yapmak isteyen sigorta, tarım, belediye ve afet ekipleri "
+                   "Nyxe'nin ürünü ORBITAL FIELD, kod yazmadan uydu analizi yapmak isteyen sigorta, tarım, belediye ve afet ekipleri "
                    "için geliştirilen bir prototiptir. Ne olduğumuzu, neye inandığımızı ve nerede olduğumuzu açıkça yazdık."),
     "hizmetler": ("HİZMETLERİMİZ", "NE YAPIYORUZ,", "AYRINTILI.",
                   "Dört alan, tek uydu çekirdeği. Her alanda ne sunduğumuzu ve hangi aşamada olduğumuzu ayrı ayrı belirttik."),
@@ -125,7 +125,7 @@ FEATURES: Tuple[Card, ...] = (
 
 ABOUT: Tuple[Card, ...] = (
     ("BİZ NEYİZ", "Uydu verisini karara çeviren araç",
-     "ORBITAL FIELD, uydu görüntülerinden hesaplanan bitki ve hasar indekslerini ekiplerin kendi kurallarına bağlayan, "
+     "Nyxe'nin ürünü ORBITAL FIELD, uydu görüntülerinden hesaplanan bitki ve hasar indekslerini ekiplerin kendi kurallarına bağlayan, "
      "kod yazmayı gerektirmeyen bir analiz platformudur. Uydu verisi parsel ve tarih bazında hasarı ve gelişimi ölçmeye "
      "yeter; eksik olan, bu ölçümü uzman gerektirmeden bir karara çeviren araçtır.", ""),
     ("AMACIMIZ", "Daha hızlı ve belgelenebilir karar",
@@ -144,7 +144,7 @@ PRINCIPLES: Tuple[Card, ...] = (
 )
 
 #: Geliştirici bilgisi: yalnızca ad; unvan, geçmiş ya da kurum iddiası yazılmaz.
-TEAM: Tuple[Card, ...] = (("GELİŞTİRİCİ", "Elif Turut", "ORBITAL FIELD prototipinin geliştiricisi.", ""),)
+TEAM: Tuple[Card, ...] = (("GELİŞTİRİCİ", "Elif Turut", "Nyxe · ORBITAL FIELD prototipinin geliştiricisi.", ""),)
 
 #: Yol haritası: yalnızca niyet beyanıdır; "yapıldı" yazan tek aşama prototiptir.
 ROADMAP: Tuple[Card, ...] = (
@@ -321,7 +321,7 @@ def tr_upper(text: str) -> str:
 HERO_LINES: Tuple[str, ...] = ("UYDUDAN", "PARSELE,", "PARSELDEN", "KARARA.")
 HERO_COPY = ("ORBITAL FIELD, parsel bazlı uydu analizini kod yazmadan sigorta, tarım, belediye ve afet ekiplerinin karar "
              "sürecine taşır. Kuralları siz belirlersiniz; her karar belgelenir.")
-HOME_ABOUT = ("ORBITAL FIELD, uydu görüntülerinden hesaplanan bitki ve hasar indekslerini ekiplerin kendi kurallarına bağlayan, "
+HOME_ABOUT = ("Nyxe'nin ürünü ORBITAL FIELD, uydu görüntülerinden hesaplanan bitki ve hasar indekslerini ekiplerin kendi kurallarına bağlayan, "
               "kod yazmayı gerektirmeyen bir analiz platformudur. Platform ekspertizin yerine geçmez; kararları ekspertizle "
               "yan yana koymayı sağlar.")
 #: Ürün kapsamı sayıları (gerçek bir kullanım ya da müşteri sayısı DEĞİL): (sayı, etiket, açıklama).
@@ -370,7 +370,7 @@ def build_glass(kind: str = "sat", cls: str = "") -> str:
 
 def build_nav_brand() -> str:
     """Menü çubuğunun sol üstündeki yazı logosu."""
-    return '<div class="lp-logo">orbital field<i>.</i></div>'
+    return '<div class="lp-logo"><span class="lp-brand">nyxe<i>.</i></span><span class="lp-brand-sub">orbital field</span></div>'
 
 
 def build_home_hero() -> str:
@@ -610,12 +610,14 @@ LANDING_CSS = """
 .st-key-lp_nav{ position:sticky; top:0; z-index:60; padding:12px 2px; margin:0 0 4px;
   background:rgba(0,0,0,.72); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
 .st-key-lp_nav [data-testid="stHorizontalBlock"]{ align-items:center; gap:.2rem; }
-.lp-logo{ font:600 1.1rem 'Inter',sans-serif; letter-spacing:-.01em; color:#fff; white-space:nowrap; }
+.lp-logo{ display:flex; flex-direction:column; gap:3px; line-height:1; color:#fff; white-space:nowrap; }
+.lp-brand{ font:600 1.4rem/1 'Inter',sans-serif; letter-spacing:-.02em; color:#fff; }
 .lp-logo i{ font-style:normal; color:var(--red); }
+.lp-brand-sub{ font:400 .6rem/1 'Inter',sans-serif; letter-spacing:.3em; color:rgba(255,255,255,.55); }
 @media (max-width:900px){
   /* dar ekran: marka solda, "Giriş yap" sağda (aynı satır); sayfa bağlantıları altta sarılır */
   .st-key-lp_nav{ position:static; }
-  .st-key-lp_nav [data-testid="stHorizontalBlock"]{ flex-wrap:wrap; justify-content:flex-start; row-gap:0; }
+  .st-key-lp_nav [data-testid="stHorizontalBlock"]{ flex-wrap:wrap; justify-content:flex-start; row-gap:.2rem; }
   .st-key-lp_nav [data-testid="stHorizontalBlock"]::after{ content:""; order:1; flex:0 0 100%; height:0; }
   .st-key-lp_nav [data-testid="stColumn"]{ flex:0 0 auto !important; width:auto !important; min-width:0 !important; order:2; }
   .st-key-lp_nav [data-testid="stColumn"]:first-child{ flex:1 1 auto !important; order:0; }

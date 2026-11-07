@@ -728,7 +728,7 @@ değişmediğini göstermek içindir; kimlik doğrulama ya da elektronik imza de
 <h2>7 · Onay</h2>
 <p class="note">Bu belge karar destek çıktısıdır; nihai karar yetkili kişiye aittir.</p>
 <div class="sign"><div>Eksper / yetkili adı, imza</div><div>Tarih</div></div>
-<div class="foot">ORBITAL FIELD · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip · Kanıt kimliği {digest[:12]}</div>
+<div class="foot">NYXE · ORBITAL FIELD · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip · Kanıt kimliği {digest[:12]}</div>
 </div></body></html>"""
 
 

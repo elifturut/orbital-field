@@ -226,7 +226,7 @@ check("çağrı bölümü: başlık, cam yörünge; demo cümlesi yalnızca demo
       "UYGULAMAYI DENEYİN" in builders["offer_demo"] and "lp-glass orbit g-offer" in builders["offer_demo"]
       and "demo hesaplarla" in builders["offer_demo"] and "demo hesaplarla" not in builders["offer"])
 check("bölüm başlıkları anlamsal (aria-level 2)", all('role="heading" aria-level="2"' in builders[k] for k in ("about_head", "services_head", "steps_head", "offer")))
-check("yazı logosu: ad ve kırmızı nokta", builders["nav_brand"] == '<div class="lp-logo">orbital field<i>.</i></div>')
+check("yazı logosu: ana ad nyxe + kırmızı nokta, alt başlık orbital field", builders["nav_brand"] == '<div class="lp-logo"><span class="lp-brand">nyxe<i>.</i></span><span class="lp-brand-sub">orbital field</span></div>')
 check("__all__ içindeki her ad tanımlı", all(hasattr(landing, n) for n in landing.__all__), [n for n in landing.__all__ if not hasattr(landing, n)])
 check("ana sayfa dışı başlıklarda cam şekil yok", all("lp-glass" not in builders["header_" + p] for p in ids[1:]))
 for pid in ids[1:]:

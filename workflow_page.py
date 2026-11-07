@@ -512,7 +512,7 @@ def _report_section(kit: Kit, st: Any, run: wf.AnalysisRun, fp: str) -> None:
                                        b.model.loso.rmse, b.model.loso.mape, b.synthetic, b.estimate.warnings)
             meta = wr.ReportMeta(rtype, parcel, policy, insured, expert, reg_no, "" if decision == "Beklemede" else decision, note, photo, ysum)
             pdf = wr.build_pdf(run, meta)
-            st.session_state["wf_pdf"] = (fp, pdf, f"orbital-field-{rtype}-raporu-{req.event_date:%Y%m%d}.pdf")
+            st.session_state["wf_pdf"] = (fp, pdf, f"nyxe-orbital-field-{rtype}-raporu-{req.event_date:%Y%m%d}.pdf")
         except ImportError:
             _note(kit, "PDF için <b>reportlab</b> paketi gerekir (requirements.txt).", "err")
         except Exception as exc:  # noqa: BLE001 — ReportError ve beklenmeyen hatalar

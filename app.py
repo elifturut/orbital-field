@@ -651,8 +651,8 @@ def build_brand_html() -> str:
     return """
     <div class="brand">
       <div class="brand-mark"></div>
-      <div><div class="brand-name">ORBITAL FIELD</div>
-      <div class="brand-sub">EARTH OBSERVATION PLATFORM</div></div>
+      <div><div class="brand-name">NYXE</div>
+      <div class="brand-sub">ORBITAL FIELD</div></div>
     </div>"""
 
 
@@ -738,7 +738,7 @@ def build_footer_html() -> str:
     now = dt.datetime.now(de.TR_TZ).strftime("%d.%m.%Y %H:%M")
     return f"""
     <div class="footer">
-      <span><b>ORBITAL FIELD</b> · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip v1.0</span>
+      <span><b>NYXE</b> · ORBITAL FIELD · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip v1.0</span>
       <span>Varsayılan veriler sentetiktir · {now} (UTC+3)</span>
       <span>Geliştirici: <b>Elif Turut</b></span>
     </div>"""
@@ -3091,7 +3091,7 @@ def render_site_home(is_demo: bool, email: str) -> None:
 
 def render_site_about(is_demo: bool) -> None:
     """Hakkımızda: biz neyiz, ilkeler, bulunduğumuz yer (yol haritası) ve geliştirici."""
-    render_html(build_section_title("BİZ NEYİZ", "ORBITAL FIELD"))
+    render_html(build_section_title("BİZ NEYİZ", "Nyxe · Orbital Field"))
     render_html(landing.build_about_html())
     render_html(build_section_title("İLKELERİMİZ", "dört söz"))
     render_html(landing.build_cards(landing.PRINCIPLES, columns=4))
@@ -4295,7 +4295,7 @@ TAB_RENDERERS: Dict[str, Tuple[str, Callable[[], None]]] = {
 
 def main() -> None:
     """Giriş noktası: sayfa ayarı, tema, oturum kapısı; sonra role göre sekmeler (sigortacı) ya da tek sayfa (müşteri)."""
-    st.set_page_config(page_title="Çok Yönlü Uydu ve Saha Analiz Platformu", page_icon="🛰️", layout="wide",
+    st.set_page_config(page_title="Nyxe · Orbital Field — Uydu ve Saha Analiz Platformu", page_icon="🛰️", layout="wide",
                        initial_sidebar_state="auto")
     inject_css()
     principal = gate()

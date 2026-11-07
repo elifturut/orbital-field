@@ -582,5 +582,5 @@ def build_notice_html(row: Mapping[str, Any], owner: str, rules: ClaimRules, eve
 <p class="note">Kararla ilgili bilgi almak ya da itiraz etmek için sigortacınıza yazılı başvurabilirsiniz.
 Bu belge karar destek çıktısıdır; nihai karar sigortacının yetkili birimine aittir.</p>
 <p class="note"><b>Bildirim kodu:</b> <span class="mono">BLD-{code}</span></p>
-<div class="foot">ORBITAL FIELD · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip</div>
+<div class="foot">NYXE · ORBITAL FIELD · Çok Yönlü Uydu ve Saha Analiz Platformu · Prototip</div>
 </div></body></html>"""

@@ -398,7 +398,9 @@ def _page_deco(report_id: str, demo: bool, title: str):
         canvas.rect(0, h - 11 * mm, w, 11 * mm, stroke=0, fill=1)
         canvas.setFillColor(colors.white)
         canvas.setFont(_Fonts.bold, 8.5)
-        canvas.drawString(15 * mm, h - 7.2 * mm, "ORBITAL FIELD")
+        canvas.drawString(15 * mm, h - 7.2 * mm, "NYXE")
+        canvas.setFont(_Fonts.regular, 8)
+        canvas.drawString(15 * mm + pdfmetrics.stringWidth("NYXE", _Fonts.bold, 8.5) + 2.2 * mm, h - 7.2 * mm, _t("·  ORBITAL FIELD"))
         canvas.setFont(_Fonts.regular, 8)
         canvas.drawRightString(w - 15 * mm, h - 7.2 * mm, _t(title))
         if demo:
@@ -476,8 +478,8 @@ def build_pdf(run: wf.AnalysisRun, meta: ReportMeta) -> bytes:
     title = "Hasar değerlendirme raporu" if insurance else "Tarımsal gelişim raporu"
 
     buf = io.BytesIO()
-    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=21 * mm, bottomMargin=17 * mm, title=_t(f"ORBITAL FIELD — {title}"),
-                          author="Elif Turut", subject=_t(f"{res.kind.label} · {region.name}"), creator="ORBITAL FIELD")
+    doc = BaseDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm, topMargin=21 * mm, bottomMargin=17 * mm, title=_t(f"NYXE · ORBITAL FIELD — {title}"),
+                          author="Elif Turut", subject=_t(f"{res.kind.label} · {region.name}"), creator="NYXE ORBITAL FIELD")
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="f", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     doc.addPageTemplates([PageTemplate(id="p", frames=[frame], onPage=_page_deco(rid, run.is_demo, _t(title)))])
     W = doc.width

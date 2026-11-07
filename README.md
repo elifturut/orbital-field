@@ -1,4 +1,6 @@
-# ORBITAL FIELD — No-Code Çok Yönlü Uydu ve Saha Analiz Platformu
+# NYXE · ORBITAL FIELD — No-Code Çok Yönlü Uydu ve Saha Analiz Platformu
+
+**Nyxe** ana marka (şirket adı), **Orbital Field** ürün adıdır; arayüzde Orbital Field, Nyxe'nin alt başlığı olarak görünür.
 
 Parsel bazlı uydu analizini kod yazmadan sigorta, tarım, belediye ve afet ekiplerinin karar sürecine taşıyan
 Streamlit prototipi. TÜBİTAK BİGG başvurusu için hazırlandı. **Varsayılan veriler sentetiktir** (gerçek bir hasar dosyasıyla karşılaştırılmadı);
