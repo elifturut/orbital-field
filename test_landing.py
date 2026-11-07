@@ -282,7 +282,7 @@ for key in (".flow.c2", ".flow.c4", ".lp-cta", ".lp-contact", ".lp-hero", ".st-k
             ".lp-bcard.white", ".lp-steps", ".lp-offer", ".lp-stat", ".lp-h2", ".lp-logo", ".lp-svc", ".lp-svc-head .tag", ".lp-list",
             ".lp-pipeline", ".lp-band", ".lp-pillars", ".st-key-lp_center_btns", ".st-key-lp_right_btn", "prefers-reduced-motion", "@keyframes lpfloat"):
     check(f"CSS tanımı: {key}", key in landing.LANDING_CSS)
-check("CSS: dar ekranda menü yapışkan değil ve satıra sarılır", "max-width:640px" in landing.LANDING_CSS and "position:static" in landing.LANDING_CSS and "flex-wrap:wrap" in landing.LANDING_CSS)
+check("CSS: dar ekranda (≤900 px) menü yapışkan değil ve satıra sarılır", "max-width:900px" in landing.LANDING_CSS and "position:static" in landing.LANDING_CSS and "flex-wrap:wrap" in landing.LANDING_CSS)
 check("CSS: ızgara dar ekranda tek sütun", "@media (max-width:820px)" in landing.LANDING_CSS and ".lp-bento{ grid-template-columns:1fr; }" in landing.LANDING_CSS)
 check("CSS dışarıdan kaynak yüklemez", not re.search(r"@import|url\(", landing.LANDING_CSS + landing.LANDING_BG_CSS))
 check("CSS: Türkçe i/ı'yı bozan text-transform kullanılmaz", "text-transform" not in landing.LANDING_CSS)

@@ -142,6 +142,7 @@ Adres geçersizse ya da boşsa düğme çizilmez ve "iletişim adresi yakında y
 | `yield_model.py` | Çok değişkenli rekolte tahmini (güven aralığı, hold-out); demo modeli sentetik geçmişle eğitilir |
 | `thresholds.py` | Eşik kanıtı, sentetik süpürme ve gerçek saha doğrulama (yanlış pozitif/negatif, ROC) |
 | `fakest.py` | Streamlit/Plotly/Folium'un sahte sürümü; testler arayüzü bununla çalıştırır |
+| `domst.py`, `layout_check.py`, `test_responsive.py` | Duyarlı düzen denetimi: sayfaları Streamlit'e benzer bir iskelete döküp Chromium'da 320–820 px genişliklerde taşma, çakışma ve iframe taşması ölçer (Playwright yoksa atlanır) |
 | `basemaps.py` | Canlı uydu harita altlıkları |
 | `calibration.py` | Geriye dönük test ve eşik kalibrasyonu |
 | `reports.py` | Karar kanıt paketi |
@@ -161,6 +162,13 @@ Adres geçersizse ya da boşsa düğme çizilmez ve "iletişim adresi yakında y
 - Şirketler ve poliçe dağılımı sentetiktir. Şirket bazlı kural yayını, bildirimler ve kullanıcı ekleme/çıkarma ekranı yoktur (ekip, yapılandırmadan okunur).
 - Kanıt belgelerindeki bağlam çiziminde komşu parsellerin hasar renkleri başka şirketlerinki olabilir (yalnızca renk; poliçe ya da kişi bilgisi değil).
 - Toplu parsel dosyası (Shapefile/GeoJSON dosya yükleme) henüz yoktur; tek bölge çizilebilir, koordinatla ya da GeoJSON metniyle verilebilir.
+
+### Telefon ve tablet uyumu
+
+Karşılama sayfaları, giriş, sigortacı sekmeleri, müşteri portalı ve analiz akışı 320–820 px genişliklerde **taklit bir Streamlit iskeletiyle** ölçüldü (`python layout_check.py`, `python test_responsive.py`):
+yatay taşma, üst üste binen metin, kırpılan içerik ve iframe taşması yok. Bu gerçek Streamlit ya da gerçek cihaz değildir: Streamlit'in kendi sütun/düğme/sekme/yan menü davranışı belgelerden yaklaşık taklit edildi,
+harita ve Plotly grafikleri yer tutucudur. İlk yayından sonra telefonda gözle kontrol edin (özellikle üst çubuk payı, yan menünün telefonda kapalı gelmesi ve harita üstü kartlar).
+Tablolar dar ekranda kaydırılabilir kutuya ya da kart görünümüne geçer; harita altındaki Plotly/Streamlit tablolarının kendi kaydırması Streamlit'e aittir.
 
 ### Analiz sonuçlarının bilimsel durumu
 

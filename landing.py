@@ -597,7 +597,8 @@ def build_contact_hints() -> str:
 
 LANDING_BG_CSS = """
 .stApp{ background:#000 !important; }
-.block-container{ max-width:1240px !important; padding-top:1rem !important; }
+.block-container{ max-width:1240px !important; padding-top:1rem !important;
+  padding-left:clamp(16px,4vw,48px) !important; padding-right:clamp(16px,4vw,48px) !important; }
 """
 
 LANDING_CSS = """
@@ -611,11 +612,14 @@ LANDING_CSS = """
 .st-key-lp_nav [data-testid="stHorizontalBlock"]{ align-items:center; gap:.2rem; }
 .lp-logo{ font:600 1.1rem 'Inter',sans-serif; letter-spacing:-.01em; color:#fff; white-space:nowrap; }
 .lp-logo i{ font-style:normal; color:var(--red); }
-@media (max-width:640px){
+@media (max-width:900px){
+  /* dar ekran: marka solda, "Giriş yap" sağda (aynı satır); sayfa bağlantıları altta sarılır */
   .st-key-lp_nav{ position:static; }
-  .st-key-lp_nav [data-testid="stHorizontalBlock"]{ flex-wrap:wrap; }
-  .st-key-lp_nav [data-testid="stColumn"]{ flex:1 1 auto !important; width:auto !important; min-width:0 !important; }
-  .st-key-lp_nav [data-testid="stColumn"]:first-child{ flex-basis:100% !important; }
+  .st-key-lp_nav [data-testid="stHorizontalBlock"]{ flex-wrap:wrap; justify-content:flex-start; row-gap:0; }
+  .st-key-lp_nav [data-testid="stHorizontalBlock"]::after{ content:""; order:1; flex:0 0 100%; height:0; }
+  .st-key-lp_nav [data-testid="stColumn"]{ flex:0 0 auto !important; width:auto !important; min-width:0 !important; order:2; }
+  .st-key-lp_nav [data-testid="stColumn"]:first-child{ flex:1 1 auto !important; order:0; }
+  .st-key-lp_nav [data-testid="stColumn"]:last-child{ order:1; }
 }
 .st-key-lp_nav .stButton button{ min-height:0 !important; padding:.3rem .5rem !important; background:transparent !important;
   border:none !important; box-shadow:none !important; }
@@ -692,8 +696,12 @@ LANDING_CSS = """
 .lp-copy{ max-width:440px; padding:clamp(4px,1vw,14px) 0 6px; }
 .lp-copy p{ margin:0 0 14px; font:300 .92rem/1.65 'Inter',sans-serif; color:rgba(255,255,255,.78); }
 @media (max-width:820px){
-  .g-hero{ --s:150px; left:auto; right:0; top:30px; }
+  /* cam nesneler mutlak konumdan çıkar, akışa girer: metnin üstüne binmez */
+  .g-hero{ position:relative; --s:clamp(130px,42vw,190px); left:auto; right:auto; top:auto; margin:calc(var(--s) * .2 + 14px) 10px calc(var(--s) * .1) auto; }
   .st-key-lp_right_btn, .st-key-lp_right_btn_how{ padding-top:0; justify-content:flex-start; }
+}
+@media (max-width:560px){
+  .lp-display .l2{ margin-left:.55em; } .lp-display .l3{ margin-left:.12em; } .lp-display .l4{ margin-left:1.1em; }
 }
 /* ---- bölümler ---- */
 .lp-sect{ margin-top:clamp(56px,9vw,112px); }
@@ -702,14 +710,19 @@ LANDING_CSS = """
 .lp-lead{ margin:18px 0 18px; max-width:520px; font:300 .95rem/1.7 'Inter',sans-serif; color:rgba(255,255,255,.76); }
 .lp-lead.center{ text-align:center; margin:clamp(52px,7vw,86px) auto 18px; }
 .lp-stats-wrap{ position:relative; overflow:hidden; margin-top:clamp(56px,9vw,112px); padding:8px 0 46px; min-height:190px; }
-.lp-stats{ position:relative; z-index:2; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:clamp(18px,4vw,54px); }
+.lp-stats{ position:relative; z-index:4; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:clamp(18px,4vw,54px); }
 .lp-stat b{ display:block; font:300 clamp(2rem,3.6vw,2.8rem)/1 'Inter',sans-serif; letter-spacing:-.02em; color:#fff; }
 .lp-stat span{ display:block; margin-top:8px; font:400 .74rem 'Inter',sans-serif; letter-spacing:.12em; color:rgba(255,255,255,.62); }
 .lp-stat small{ display:block; margin-top:4px; font:300 .72rem 'Inter',sans-serif; color:rgba(255,255,255,.42); }
-.lp-note{ position:relative; z-index:2; margin:22px 0 0; text-align:left; max-width:340px; font:300 .72rem 'Inter',sans-serif; color:rgba(255,255,255,.4); }
+.lp-note{ position:relative; z-index:4; margin:22px 0 0; text-align:left; max-width:340px; font:300 .72rem 'Inter',sans-serif; color:rgba(255,255,255,.4); }
 .g-about{ --s:clamp(58px,6.5vw,90px); --r:0deg; right:42%; bottom:2px; }
 .g-edge{ --s:clamp(150px,19vw,270px); --r:-22deg; right:-9%; bottom:-14%; }
-@media (max-width:820px){ .lp-stats{ justify-content:flex-start; } }
+@media (max-width:820px){
+  .lp-stats{ justify-content:flex-start; }
+  .lp-stats-wrap{ min-height:0; padding-bottom:12px; }
+  .lp-stats-wrap .g-about{ display:none; }
+  .lp-stats-wrap .g-edge{ position:relative; right:auto; bottom:auto; --s:clamp(120px,40vw,170px); margin:14px 12px 0 auto; }
+}
 /* ---- bento kartlar ---- */
 .lp-bento{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:26px; }
 .lp-bcard{ position:relative; display:flex; flex-direction:column; justify-content:flex-end; min-height:230px; padding:22px;
@@ -740,6 +753,10 @@ LANDING_CSS = """
 .lp-offer .lp-h2, .lp-offer .lp-lead{ position:relative; z-index:2; }
 .g-offer{ --s:clamp(280px,60vw,760px); --r:-6deg; left:50%; margin-left:calc(var(--s) * -.5);
   top:calc(clamp(54px,9vw,120px) + 1.8rem - var(--s) * .15); z-index:1; opacity:.95; }
+@media (max-width:820px){
+  .lp-offer{ padding-top:clamp(28px,6vw,54px); }
+  .g-offer{ position:relative; left:auto; top:auto; --s:min(84vw,420px); margin:0 auto calc(var(--s) * .12 + 18px); }
+}
 .note.info{ background:transparent; border:1px solid rgba(255,255,255,.22); border-radius:22px; margin-top:26px; }
 /* ---- diğer sayfaların başlığı ---- */
 .lp-hero{ border-bottom:none; padding:clamp(24px,5vw,56px) 0 6px; }

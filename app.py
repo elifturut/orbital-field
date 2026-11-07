@@ -163,7 +163,12 @@ CUSTOM_CSS = """
 }
 [data-testid="stHeader"]{ background:transparent; }
 #MainMenu, footer{ visibility:hidden; }
-.block-container{ padding-top:1.6rem; padding-bottom:2.5rem; max-width:1440px; }
+.block-container{ padding-top:1.6rem; padding-bottom:2.5rem; max-width:1440px;
+  padding-left:clamp(14px,4vw,5rem) !important; padding-right:clamp(14px,4vw,5rem) !important; }
+@media (max-width:820px){
+  /* Streamlit'in sabit üst çubuğu (kenar menü düğmesi, menü) içeriğin üstüne binmesin */
+  .block-container{ padding-top:3.9rem !important; padding-bottom:2rem !important; }
+}
 ::-webkit-scrollbar{ width:10px; height:10px; }
 ::-webkit-scrollbar-track{ background:var(--bg); }
 ::-webkit-scrollbar-thumb{ background:#232832; border-radius:8px; border:2px solid var(--bg); }
@@ -984,7 +989,23 @@ def show_html_frame(markup: str, height: int = 780) -> None:
         render_html('<div class="note info">Bu Streamlit sürümünde belge önizlemesi yok; '
                     "belgeyi indirip tarayıcıda açın.</div>")
         return
-    frame(markup, height=height, scrolling=True)
+    frame(_with_frame_fit(markup), height=height, scrolling=True)
+
+
+#: Önizleme çerçevesinin yüksekliğini içeriğe uydurur (aynı kökenli çerçevede ``frameElement``); olmazsa verilen sabit yükseklik kalır.
+#: Yalnızca ekrandaki önizlemeye eklenir; indirilen/saklanan belgeler betiksiz kalır.
+FRAME_FIT_JS = ("<script>(function(){function fit(){try{var f=window.frameElement;if(!f){return;}"
+                "var h=Math.ceil(document.documentElement.getBoundingClientRect().height)+2;f.style.height=h+'px';f.setAttribute('height',h);}catch(e){}}"
+                "window.addEventListener('load',fit);window.addEventListener('resize',fit);"
+                "if(window.ResizeObserver){new ResizeObserver(fit).observe(document.body);}setTimeout(fit,150);setTimeout(fit,700);})();</script>")
+
+
+def _with_frame_fit(markup: str) -> str:
+    """Belgeye yükseklik uydurma betiğini ekler (belge zaten ``frameElement`` kullanıyorsa dokunmaz)."""
+    if "frameElement" in markup:
+        return markup
+    at = markup.lower().rfind("</body>")
+    return markup + FRAME_FIT_JS if at < 0 else markup[:at] + FRAME_FIT_JS + markup[at:]
 
 
 # --------------------------------------------------------------------------- #
@@ -1066,6 +1087,15 @@ MAP_OVERLAY_CSS = """<style>
 .mo-stat .l i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c);margin-right:7px;vertical-align:0}
 .mo-stat .v{margin-top:6px;font:300 26px/1.05 Inter,sans-serif;letter-spacing:-.02em;color:#fff}
 .mo-stat .s{margin-top:3px;font:400 10.5px Inter,sans-serif;color:#8b93a1}
+@media (max-width:560px){
+  .mo::before{height:128px}.mo::after{height:120px}
+  .mo-title{left:56px;top:10px;max-width:calc(100% - 116px)}
+  .mo-h{font-size:19px}.mo-eyebrow{font-size:9px;letter-spacing:.14em}
+  .mo-chip{font-size:9.5px;padding:4px 9px}
+  .mo-stats{left:10px;right:10px;bottom:26px;gap:6px;max-width:none}
+  .mo-stat{box-sizing:border-box;flex:1 1 calc(50% - 6px);min-width:0;padding:7px 11px 8px;border-radius:14px}
+  .mo-stat .v{font-size:19px}.mo-stat .l{font-size:8.5px}.mo-stat .s{font-size:9.5px}
+}
 </style>"""
 
 
@@ -2797,9 +2827,9 @@ SESSION_LOGIN, SESSION_NOTICE = "auth_login_state", "auth_notice"
 SESSION_VIEW, VIEW_LANDING, VIEW_LOGIN = "ui_view", "landing", "login"
 #: Karşılama sitesinde açık sayfa (``landing.PAGES`` kimliklerinden biri).
 SESSION_PAGE = "ui_page"
-#: Oturum kapalıyken yan menü gösterilmez (boş bir şerit kalmasın).
+#: Oturum kapalıyken yan menü ve Streamlit'in üst çubuğu gösterilmez (boş şerit kalmasın; çubuktaki düğmeler menüye binmesin).
 HIDE_SIDEBAR_CSS = ('<style>section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], '
-                    '[data-testid="collapsedControl"]{display:none !important}</style>')
+                    '[data-testid="collapsedControl"], [data-testid="stHeader"]{display:none !important}</style>')
 #: Müşteri oturumu her zaman bu tohum ve varsayılan kurallarla çalışır (müşteri hiçbir ayarı değiştiremez).
 DEFAULT_SEED = 2026
 LOGIN_MESSAGES: Dict[str, str] = {
@@ -4266,7 +4296,7 @@ TAB_RENDERERS: Dict[str, Tuple[str, Callable[[], None]]] = {
 def main() -> None:
     """Giriş noktası: sayfa ayarı, tema, oturum kapısı; sonra role göre sekmeler (sigortacı) ya da tek sayfa (müşteri)."""
     st.set_page_config(page_title="Çok Yönlü Uydu ve Saha Analiz Platformu", page_icon="🛰️", layout="wide",
-                       initial_sidebar_state="expanded")
+                       initial_sidebar_state="auto")
     inject_css()
     principal = gate()
     if principal is None:

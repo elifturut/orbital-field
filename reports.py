@@ -542,7 +542,8 @@ table.t td.gap,table.t th.gap{padding-left:16px}
 @page{size:A4;margin:13mm}
 @media print{body{background:#fff}.page{border:0;margin:0;padding:0;max-width:none}.noprint{display:none}
   h2{break-after:avoid}table,.decision,.grid2{break-inside:avoid}}
-@media (max-width:640px){.page{padding:20px 16px}.kv{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.decision{flex-direction:column;gap:12px}}
+@media (max-width:640px){.page{padding:20px 16px;margin:8px auto}.kv{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.decision{flex-direction:column;gap:12px}
+  table.t{font-size:12px}table.t th,table.t td{padding-right:6px;overflow-wrap:anywhere}table.t td.gap,table.t th.gap{padding-left:8px}.sign{gap:18px}h1{font-size:21px}}
 """
 
 

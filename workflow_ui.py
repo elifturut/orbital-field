@@ -62,11 +62,21 @@ _CSS = f"""
 .wf td{{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle}} .wf td.num{{text-align:right;font-variant-numeric:tabular-nums}}
 .wf-bar{{height:6px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden;min-width:60px}} .wf-bar>span{{display:block;height:100%;border-radius:99px}}
 .wf-sw{{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:8px;vertical-align:-1px}}
-.wf-two{{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px}}
+.wf-two{{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:14px}}
 .wf-note{{font-size:.76rem;color:{C_MUTED};line-height:1.55;margin:6px 0 0}} .wf-warn{{color:{C_AMBER}}} .wf-bad{{color:{C_DANGER}}} .wf-ok{{color:{C_OK}}}
 .wf-kv{{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:.8rem;margin:8px 0}} .wf-kv span:nth-child(odd){{color:{C_MUTED}}} .wf-kv span:nth-child(even){{text-align:right;font-variant-numeric:tabular-nums}}
 .wf-big{{font:300 2.1rem/1.1 Inter,sans-serif;letter-spacing:-.02em;color:#fff}} .wf-big small{{font-size:.9rem;color:{C_MUTED};font-weight:400;letter-spacing:0}}
 .wf ul{{margin:6px 0 0;padding-left:18px;font-size:.78rem;color:{C_SOFT};line-height:1.6}}
+.wf-tw{{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}}
+@media(max-width:560px){{
+  .wf-card{{padding:12px 12px}} .wf-big{{font-size:1.8rem}}
+  .wf table.cards, .wf table.cards tbody, .wf table.cards tr, .wf table.cards td{{display:block;width:100%}}
+  .wf table.cards thead{{display:none}}
+  .wf table.cards tr{{padding:8px 0;border-bottom:1px solid {C_LINE}}}
+  .wf table.cards td{{display:flex;justify-content:space-between;gap:14px;border:0;padding:2px 0;text-align:right}}
+  .wf table.cards td::before{{content:attr(data-l);flex:0 0 36%;text-align:left;color:{C_MUTED};font:600 .6rem Inter,sans-serif;letter-spacing:.08em;text-transform:uppercase}}
+  .wf table.cards td[data-l=""]::before{{content:none}}
+}}
 """
 
 
@@ -100,7 +110,9 @@ def png_data_uri(arr: np.ndarray) -> str:
 
 
 def _wrap(inner: str) -> str:
-    return f'<div class="wf"><style>{_CSS}</style>{inner}</div>'
+    """Bileşeni ``.wf`` kapsayıcısına sarar; tablolar yatay kaydırılabilir bir kutuya alınır (dar ekranda sayfayı taşırmaz)."""
+    boxed = inner.replace("<table", '<div class="wf-tw"><table').replace("</table>", "</table></div>")
+    return f'<div class="wf"><style>{_CSS}</style>{boxed}</div>'
 
 
 # --------------------------------------------------------------------------- #
@@ -618,7 +630,9 @@ def build_points_html(points: pd.DataFrame) -> str:
                  f'<p class="wf-note">DP/YP/DN/YN: doğru/yanlış pozitif/negatif. Yanlış pozitif = hasarsız parsele hasar denmesi; yanlış negatif = hasarlı parselin kaçırılması. Parantez: Wilson %95 aralığı.</p></div>')
 
 
-_FIT_JS = """(function(){var r=document.getElementById('wf-root');if(!r){return;}function fit(){var h=Math.ceil(r.getBoundingClientRect().height)+10;try{var f=window.frameElement;if(f){f.style.height=h+'px';f.setAttribute('height',h);}}catch(e){}}
+_FIT_JS = """(function(){var r=document.getElementById('wf-root');if(!r){return;}
+try{[].forEach.call(document.querySelectorAll('.wf table'),function(t){var th=[].map.call(t.querySelectorAll('thead th'),function(x){return x.textContent.trim();});if(th.length>=5){t.classList.add('cards');[].forEach.call(t.querySelectorAll('tbody tr'),function(tr){[].forEach.call(tr.children,function(td,i){td.setAttribute('data-l',th[i]||'');});});}});}catch(e){}
+function fit(){var h=Math.ceil(r.getBoundingClientRect().height)+10;try{var f=window.frameElement;if(f){f.style.height=h+'px';f.setAttribute('height',h);}}catch(e){}}
 window.addEventListener('load',fit);window.addEventListener('resize',fit);if(window.ResizeObserver){new ResizeObserver(fit).observe(r);}setTimeout(fit,120);setTimeout(fit,700);})();"""
 
 
